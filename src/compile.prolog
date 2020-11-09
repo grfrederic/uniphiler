@@ -1,4 +1,5 @@
 :- use_module('parse.prolog').
+:- use_module('llvm.prolog').
 
 
 :- initialization (main, main).
@@ -6,7 +7,8 @@
 
 main([SourceFile|_]) :-
     parse(SourceFile, AST),
-    write(AST), nl,
+    compile_to_llvm(AST, LLVM),
+    write(LLVM), nl,
     halt(0).
 
 main(_) :-

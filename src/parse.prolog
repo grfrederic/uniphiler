@@ -20,7 +20,6 @@ stmt(sexp(E)) --> exp(E).
 
 % === EXPRESSIONS ===
 
-
 exp(E) --> exp1(E).
 
 % addition is right assoc
