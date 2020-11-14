@@ -1,3 +1,7 @@
 private/
+outs/
 *.ll
+*.j
+*.bc
+*.class
 *~

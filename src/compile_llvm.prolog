@@ -8,7 +8,7 @@
 main([SourceFile|_]) :-
     parse(SourceFile, AST),
     compile_to_llvm(AST, LLVM),
-    write(LLVM), nl,
+    write(LLVM),
     halt(0).
 
 main(_) :-
