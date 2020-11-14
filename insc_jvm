@@ -1,0 +1,24 @@
+#!/bin/bash
+
+NONE='\033[00m'
+PURPLE='\033[01;35m'
+
+ROOT_DIR=$(dirname "$(realpath $0)")
+
+echo -e "Welcome to the ${PURPLE}PROLOG COMPILER${NONE}!"
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 [SOURCE]"
+    exit 1
+fi
+
+SOURCE=$1
+OUT_J="${SOURCE%.*}.j"
+TARGET_DIR=$(dirname $SOURCE)
+
+echo -e "Compiling: ${SOURCE}"
+swipl -q -t halt ${ROOT_DIR}/src/compile_jvm.prolog ${SOURCE} > ${OUT_J}
+echo -e "Generated: ${OUT_J}"
+
+echo -e "Compiling: ${OUT_J}"
+java -jar ${ROOT_DIR}/external/jasmin.jar ${OUT_J} -d ${TARGET_DIR}

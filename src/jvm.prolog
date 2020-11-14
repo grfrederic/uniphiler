@@ -1,28 +1,36 @@
-:- module(jvm, [compile_to_jvm/2]).
+:- module(jvm, [compile_to_jvm/3]).
 
 :- use_module(library(dcg/basics)).
 :- use_module(library(dcg/high_order)).
 
 
-compile_to_jvm(AST, JVM) :-
-    phrase(program_jvm(AST), JVM_),
+compile_to_jvm(SourceFile, AST, JVM) :-
+    phrase(program_jvm(SourceFile, AST), JVM_),
     string_codes(JVM, JVM_).
 
 
-program_jvm(AST) --> ".bytecode 58.0", newline,
-                     ".source TODO.ist", newline,
-                     ".class TODO", newline,
-                     ".super java/lang/Object", newline,
-                     newline,
-                     ".method <init>()V", newline,
-                     indent, ".limit stack 1", newline,
-                     indent, ".limit locals 1", newline,
-                     indent, "aload_0", newline,
-                     indent, "invokespecial java/lang/Object/<init>()V", newline,
-                     indent, "return", newline,
-                     ".end method", newline,
-                     newline,
-                     main(AST).
+program_jvm(SourceFile, AST) -->
+    {name_class(SourceFile, ClassName),
+     term_string(SourceFile, Source)},
+    ".bytecode 58.0", newline,
+    ".source ", Source, newline,
+    ".class ", ClassName, newline,
+    ".super java/lang/Object", newline,
+    newline,
+    ".method <init>()V", newline,
+    indent, ".limit stack 1", newline,
+    indent, ".limit locals 1", newline,
+    indent, "aload_0", newline,
+    indent, "invokespecial java/lang/Object/<init>()V", newline,
+    indent, "return", newline,
+    ".end method", newline,
+    newline,
+    main(AST).
+
+
+name_class(SourceFile, ClassName) :-
+    file_base_name(SourceFile, Name),
+    split_string(Name, ".", "", [ClassName|_]).
 
 
 main(AST) --> {vars(AST, Vars)},

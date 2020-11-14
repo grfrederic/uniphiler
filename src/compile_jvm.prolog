@@ -7,7 +7,7 @@
 
 main([SourceFile|_]) :-
     parse(SourceFile, AST),
-    compile_to_jvm(AST, JVM),
+    compile_to_jvm(SourceFile, AST, JVM),
     write(JVM),
     halt(0).
 
