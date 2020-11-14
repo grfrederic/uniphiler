@@ -16,7 +16,7 @@ program_llvm(AST) --> "@formatStringNr = private constant [3 x i8] c\"%d\\00\"",
                       main(AST).
 
 
-main(AST) --> sequence(main_start, stmt, newline, main_end, AST).
+main(AST) --> sequence(main_start, stmt, "", main_end, AST).
 main_start --> {reset_reg_iter}, "define i32 @main() {", newline.
 main_end --> return, "}", newline.
 
@@ -54,11 +54,13 @@ print_nl_call(RO) --> indent, reg(RO), " = call i32 (i8*, ...) @printf(i8* getel
 %   * assignments of consts to vars
 :- dynamic('id_val_'/2).
 
-get_id_val(I, V) :- unpack_id(I, J), id_val_(J, V).
 set_id_val(I, V) :-
     unpack_id(I, J),
     retractall(id_val_(J, _)),
     asserta(id_val_(J, V)).
+
+get_id_val(I, V) :- unpack_id(I, J), id_val_(J, V).
+get_id_val(_, _) :- throw("Variable referenced before assignment").
 
 unpack_id(token(id(I), _Loc), I).
 
@@ -85,7 +87,7 @@ reg(O) --> {var(O), get_reg_iter(N), string_concat("%", N, O)}, !, O.
 fun(exp_add) --> !, "add".
 fun(exp_sub) --> !, "sub".
 fun(exp_mul) --> !, "mul".
-fun(exp_div) --> !, "div".
+fun(exp_div) --> !, "sdiv".
 fun(F) --> {term_string(F, FN)}, !, FN.
 
 regs(Os) --> sequence(reg, ", ", Os).

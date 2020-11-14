@@ -42,7 +42,7 @@ main(AST) --> {vars(AST, Vars)},
               ".end method", newline.
 
 
-stmts([S|Stmts], Vars) --> stmt(S, Vars), newline, stmts(Stmts, Vars).
+stmts([S|Stmts], Vars) --> stmt(S, Vars), !, newline, stmts(Stmts, Vars).
 stmts([], _) --> [].
 
 stmt(sass(I, E), Vars) --> {get_var_id(I, Vars, Id)}, exp(E, Vars), store_int(Id).
@@ -69,14 +69,16 @@ fun(exp_div) --> !, "idiv".
 fun(F) --> {term_string(F, FN)}, !, FN.
 
 
-push_int(0) --> indent, "iconst_0", newline.
-push_int(1) --> indent, "iconst_1", newline.
-push_int(2) --> indent, "iconst_2", newline.
-push_int(3) --> indent, "iconst_3", newline.
-push_int(4) --> indent, "iconst_4", newline.
-push_int(5) --> indent, "iconst_5", newline.
-push_int(-1) --> indent, "iconst_m1", newline.
-push_int(N) --> indent, "bipush ", number(N), newline.
+push_int(0) --> !, indent, "iconst_0", newline.
+push_int(1) --> !, indent, "iconst_1", newline.
+push_int(2) --> !, indent, "iconst_2", newline.
+push_int(3) --> !, indent, "iconst_3", newline.
+push_int(4) --> !, indent, "iconst_4", newline.
+push_int(5) --> !, indent, "iconst_5", newline.
+push_int(-1) --> !, indent, "iconst_m1", newline.
+push_int(N) --> {-128 =< N, N =< 127}, !, indent, "bipush ", number(N), newline.
+push_int(N) --> {-32768 =< N, N =< 32767}, !, indent, "sipush ", number(N), newline.
+push_int(N) --> indent, "ldc ", number(N), newline.
 
 store_int(0) --> indent, "istore_0", newline.
 store_int(1) --> indent, "istore_1", newline.
@@ -95,9 +97,10 @@ call_println --> indent, "invokevirtual java/io/PrintStream/println(I)V", newlin
 
 
 % === GET LIST OF VARS USED ===
-vars(AST, Vars) :- setof(I, member(sass(token(id(I), _), _), AST), Vars).
+vars(AST, Vars) :- setof(I, L^E^member(sass(token(id(I), L), E), AST), Vars).
+vars(_, []).
 
-get_var_id(token(id(I), _), Vars, Id) :- nth0(Id, Vars, I).
+get_var_id(token(id(I), _), Vars, Id) :- nth1(Id, Vars, I).
 
 
 % === COMPUTE STACK LIMIT ===
@@ -105,7 +108,7 @@ limit_stack(Stmts) --> {maplist(stmt_stack, Stmts, Sizes), max_member(S, Sizes)}
                        indent, ".limit stack ", number(S), newline.
 
 stmt_stack(sass(_, E), S) :- exp_stack(E, S).
-stmt_stack(sexp(E), S) :- exp_stack(E, S).
+stmt_stack(sexp(E), S1) :- exp_stack(E, S), S1 is S + 1.
 
 exp_stack(exp_lit(_), 1) :- !.
 exp_stack(exp_var(_), 1) :- !.
@@ -123,7 +126,7 @@ exp_stack_args([], [], _).
 
 
 % === COMPUTE LOCALS LIMIT ===
-limit_locals(Vars) --> {length(Vars, N)}, indent, ".limit locals ", number(N), newline.
+limit_locals(Vars) --> {length(Vars, N), N1 is N + 1}, indent, ".limit locals ", number(N1), newline.
 
 
 indent --> "  ".

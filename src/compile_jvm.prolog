@@ -12,5 +12,5 @@ main([SourceFile|_]) :-
     halt(0).
 
 main(_) :-
-    write("Usage: compile.prolog [source file]"), nl,
+    write("Usage:swipl -q -t halt compile_jvm.prolog [source file]"), nl,
     halt(1).
