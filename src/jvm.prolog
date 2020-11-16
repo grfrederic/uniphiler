@@ -37,37 +37,85 @@ method_init -->
     indent, "return", newline,
     ".end method", newline.
 
-
+% we use phrase because we need to generate _stmts_ first,
+% so that we know what stack size we should declare
 method_main(AST) -->
-    {vars(AST, Vars)},
+    {vars(AST, Vars),
+     phrase(stmts(AST, Vars, Stack), StmtsCode)},  % calculates Stack
     ".method public static main([Ljava/lang/String;)V", newline,
-    limit_stack(AST),
+    limit_stack(Stack),
     limit_locals(Vars),
-    stmts(AST, Vars), 
+    StmtsCode,
     indent, "return", newline,
     ".end method", newline.
 
-
-stmts([], _) --> [].
-stmts([S|Stmts], Vars) --> stmt(S, Vars), newline, stmts(Stmts, Vars).
-
-
-stmt(sass(I, E), Vars) --> {get_var_id(I, Vars, Id)}, exp(E, Vars), store_int(Id).
-stmt(sexp(E), Vars) --> push_io_out, exp(E, Vars), call_println.
+limit_stack(Stack) --> indent, ".limit stack ", number(Stack), newline.
+limit_locals(Vars) --> {length(Vars, N), N1 is N + 1}, indent, ".limit locals ", number(N1), newline.
 
 
-% exp(Expression)
-% Result left on stack
-exp(exp_var(I), Vars) --> !, {get_var_id(I, Vars, Id)}, push_var(Id).
-exp(exp_lit(token(nr(N), _)), _) --> !, push_int(N).
+% stmts(+Stmts, +Vars, -Stack)
+stmts(Stmts, Vars, Stack) --> stmts_(Stmts, Vars, Ss), {max_member(Stack, Ss)}.
 
-exp(E, Vars) --> {compound_name_arguments(E, F, Args)},
-                 prepare_args(Args, Vars),
-                 indent, fun(F), newline.
+stmts_([], _, []) --> [].
+stmts_([Stmt|Stmts], Vars, [Stack|Stacks]) -->
+    stmt(Stmt, Vars, Stack),
+    newline,
+    stmts_(Stmts, Vars, Stacks).
 
-prepare_args([A|As], Vars) --> exp(A, Vars), prepare_args(As, Vars).
-prepare_args([], _) --> [].
 
+stmt(sass(I, E), Vars, Stack) -->
+    {get_var_id(I, Vars, Id)},
+    exp(E, Vars, Stack),
+    store_int(Id).
+
+stmt(sexp(E), Vars, StackStmt) -->
+    push_io_out,
+    exp(E, Vars, StackExp),
+    call_println,
+    {StackStmt is StackExp + 1}.
+
+
+% exp(+Exp, +Vars, -Stack)
+% Vars - list of Vars in current context
+% Stack - stack required for evaluating Expr
+% result is left on stack
+exp(exp_var(I), Vars, 1) --> !, {get_var_id(I, Vars, Id)}, push_var(Id).
+exp(exp_lit(token(nr(N), _)), _, 1) --> !, push_int(N).
+
+% optimize stack for binary operations
+exp(E, Vars, S) -->
+    {compound_name_arguments(E, BinOp, [E1, E2])}, !,
+    {phrase(exp(E1, Vars, S1), C1),
+     phrase(exp(E2, Vars, S2), C2),
+     (S1 > S2 -> ChgOrd = false, ArgCode = (C1, C2), S is max(S1, S2 + 1);
+                 ChgOrd = true, ArgCode = (C2, C1), S is max(S2, S1 + 1))},
+    ArgCode, 
+    maybe_swap(ChgOrd, BinOp),
+    indent, fun(BinOp), newline.
+
+exp(E, Vars, S) -->
+    {compound_name_arguments(E, F, Args)},
+    prepare_args(Args, Vars, Ss),
+    indent, fun(F), newline,
+    {total_stack(Ss, S)}.
+
+prepare_args([], _, []) --> [].
+prepare_args([A|As], Vars, [S|Ss]) --> exp(A, Vars, S), prepare_args(As, Vars, Ss).
+
+maybe_swap(true, BinOp) --> {\+ commutative(BinOp)}, !, swap.
+maybe_swap(_, _) --> [].
+
+swap --> indent, "swap", newline.
+
+total_stack(Ss, T1) :-
+    total_stack_(Ss, T, 0), T1 is max(T, 1).  % at least one for return value
+
+total_stack_([], -1, _).
+total_stack_([S|Ss], T, N) :-
+    SN is S + N,
+    N1 is N + 1,
+    total_stack_(Ss, R, N1),
+    T is max(SN, R).
 
 % emitting
 
@@ -101,6 +149,12 @@ push_var(3) --> !, indent, "iload_3", newline.
 push_var(I) --> indent, "iload ", number(I), newline.
 
 
+% === COMMUTATIVE ===
+
+commutative(exp_add).
+commutative(exp_mul).
+
+
 % === SPECIAL CALLS ===
 
 push_io_out --> indent, "getstatic java/lang/System/out Ljava/io/PrintStream;", newline.
@@ -121,34 +175,6 @@ vars(_, []).
 % get_var_id(+Token, +Vars, ?Id)
 % check Id of Token variable (by looking up its position)
 get_var_id(token(id(I), _), Vars, Id) :- nth1(Id, Vars, I).
-
-
-% === COMPUTE STACK LIMIT ===
-
-limit_stack(Stmts) --> {maplist(stmt_stack, Stmts, Sizes), max_member(S, Sizes)},
-                       indent, ".limit stack ", number(S), newline.
-
-stmt_stack(sass(_, E), S) :- exp_stack(E, S).
-stmt_stack(sexp(E), S1) :- exp_stack(E, S), S1 is S + 1.
-
-exp_stack(exp_lit(_), 1) :- !.
-exp_stack(exp_var(_), 1) :- !.
-exp_stack(E, S) :- compound_name_arguments(E, _, Args), exp_stack_(Args, S).
-
-exp_stack_(Args, S) :- exp_stack_args(Args, Ss, 0), max_member(S, Ss).
-
-exp_stack_args([A|Args], [S|Ss], N) :-
-    exp_stack(A, S1),
-    S is S1 + N,
-    N1 is N + 1,
-    exp_stack_args(Args, Ss, N1).
-
-exp_stack_args([], [], _).
-
-
-% === COMPUTE LOCALS LIMIT ===
-
-limit_locals(Vars) --> {length(Vars, N), N1 is N + 1}, indent, ".limit locals ", number(N1), newline.
 
 
 indent --> "  ".
