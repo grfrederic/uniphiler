@@ -6,7 +6,11 @@
 
 compile_to_jvm(SourceFile, AST, JVM) :-
     phrase(program_jvm(SourceFile, AST), JVM_),
-    string_codes(JVM, JVM_).
+    string_codes(JVM, JVM_),
+    !. % compilation is deterministic
+
+compile_to_jvm(_, _, _) :-
+    throw(compilation_failed).
 
 
 program_jvm(SourceFile, AST) -->
@@ -105,10 +109,8 @@ prepare_args([A|As], Vars, [S|Ss]) --> exp(A, Vars, S), prepare_args(As, Vars, S
 maybe_swap(true, BinOp) --> {\+ commutative(BinOp)}, !, swap.
 maybe_swap(_, _) --> [].
 
-swap --> indent, "swap", newline.
-
 total_stack(Ss, T1) :-
-    total_stack_(Ss, T, 0), T1 is max(T, 1).  % at least one for return value
+    total_stack_(Ss, T, 0), T1 is max(T, 1).  % at least 1 for return value
 
 total_stack_([], -1, _).
 total_stack_([S|Ss], T, N) :-
@@ -116,6 +118,7 @@ total_stack_([S|Ss], T, N) :-
     N1 is N + 1,
     total_stack_(Ss, R, N1),
     T is max(SN, R).
+
 
 % emitting
 
@@ -157,6 +160,8 @@ commutative(exp_mul).
 
 % === SPECIAL CALLS ===
 
+swap --> indent, "swap", newline.
+
 push_io_out --> indent, "getstatic java/lang/System/out Ljava/io/PrintStream;", newline.
 call_println --> indent, "invokevirtual java/io/PrintStream/println(I)V", newline.
 
@@ -174,7 +179,8 @@ vars(_, []).
 
 % get_var_id(+Token, +Vars, ?Id)
 % check Id of Token variable (by looking up its position)
-get_var_id(token(id(I), _), Vars, Id) :- nth1(Id, Vars, I).
+get_var_id(token(id(I), _), Vars, Id) :- nth1(Id, Vars, I), !.
+get_var_id(_, _, _) :- throw(reference_before_assignment).
 
 
 indent --> "  ".

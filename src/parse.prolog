@@ -8,7 +8,10 @@
 
 parse(File, AST) :-
     tokenize(File, Tokens),
-    phrase(program(AST), Tokens).
+    phrase(program(AST), Tokens), !. % parser is deterministic
+
+parse(_, _) :-
+    throw(parser_failed).
 
 
 program(AST) --> sequence(stmt, t(semicolon), AST).

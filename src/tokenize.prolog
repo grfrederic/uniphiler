@@ -5,7 +5,7 @@
 
 
 tokenize(File, Tokens) :-
-    phrase_from_file(tokens(Tokens), File).
+    phrase_from_file(tokens(Tokens), File), !. % tokenize is deterministic
 
 
 % tokens may be separated by blanks
@@ -29,7 +29,7 @@ token_raw(right_parenthesis) --> ")", !.
 token_raw(equals_sign) --> "=", !.
 token_raw(asterisk) --> "*", !.
 token_raw(slash) --> "/", !.
-token_raw(_) --> syntax_error("Tokenizer failed: unexpected symbol.").
+token_raw(_) --> syntax_error(tokenizer_error).
 
 % ignore whitespace
 iws --> clot(_, space).

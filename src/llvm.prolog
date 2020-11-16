@@ -6,7 +6,11 @@
 
 compile_to_llvm(AST, LLVM) :-
     phrase(program_llvm(AST), LLVM_),
-    string_codes(LLVM, LLVM_).
+    string_codes(LLVM, LLVM_),
+    !. % compilation is deterministic
+
+compile_to_llvm(_, _,) :-
+    throw(compilation_failed).
 
 
 program_llvm(AST) --> printing_header,
@@ -78,7 +82,7 @@ set_id_val(I, V) :-
 
 % get_id_val(+I, ?V)
 get_id_val(I, V) :- unpack_id(I, J), id_val_(J, V).
-get_id_val(_, _) :- throw("Variable referenced before assignment").
+get_id_val(_, _) :- throw(reference_before_assignment).
 
 unpack_id(token(id(I), _Loc), I).
 
