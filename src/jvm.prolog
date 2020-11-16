@@ -10,49 +10,56 @@ compile_to_jvm(SourceFile, AST, JVM) :-
 
 
 program_jvm(SourceFile, AST) -->
-    {name_class(SourceFile, ClassName),
+    metadata(SourceFile),
+    class(AST).
+
+metadata(SourceFile) -->
+    {file_base_name(SourceFile, Name),
+     split_string(Name, ".", "", [ClassName|_]),
      term_string(SourceFile, Source)},
     ".bytecode 58.0", newline,
     ".source ", Source, newline,
-    ".class ", ClassName, newline,
+    ".class ", ClassName, newline.
+
+class(AST) -->
     ".super java/lang/Object", newline,
     newline,
+    method_init,
+    newline,
+    method_main(AST).
+
+method_init -->
     ".method <init>()V", newline,
     indent, ".limit stack 1", newline,
     indent, ".limit locals 1", newline,
     indent, "aload_0", newline,
     indent, "invokespecial java/lang/Object/<init>()V", newline,
     indent, "return", newline,
-    ".end method", newline,
-    newline,
-    main(AST).
+    ".end method", newline.
 
 
-name_class(SourceFile, ClassName) :-
-    file_base_name(SourceFile, Name),
-    split_string(Name, ".", "", [ClassName|_]).
+method_main(AST) -->
+    {vars(AST, Vars)},
+    ".method public static main([Ljava/lang/String;)V", newline,
+    limit_stack(AST),
+    limit_locals(Vars),
+    stmts(AST, Vars), 
+    indent, "return", newline,
+    ".end method", newline.
 
 
-main(AST) --> {vars(AST, Vars)},
-              ".method public static main([Ljava/lang/String;)V", newline,
-              limit_stack(AST),
-              limit_locals(Vars),
-              stmts(AST, Vars), 
-              indent, "return", newline,
-              ".end method", newline.
-
-
-stmts([S|Stmts], Vars) --> stmt(S, Vars), !, newline, stmts(Stmts, Vars).
 stmts([], _) --> [].
+stmts([S|Stmts], Vars) --> stmt(S, Vars), newline, stmts(Stmts, Vars).
+
 
 stmt(sass(I, E), Vars) --> {get_var_id(I, Vars, Id)}, exp(E, Vars), store_int(Id).
 stmt(sexp(E), Vars) --> push_io_out, exp(E, Vars), call_println.
 
 
+% exp(Expression)
+% Result left on stack
 exp(exp_var(I), Vars) --> !, {get_var_id(I, Vars, Id)}, push_var(Id).
-
 exp(exp_lit(token(nr(N), _)), _) --> !, push_int(N).
-
 
 exp(E, Vars) --> {compound_name_arguments(E, F, Args)},
                  prepare_args(Args, Vars),
@@ -62,12 +69,13 @@ prepare_args([A|As], Vars) --> exp(A, Vars), prepare_args(As, Vars).
 prepare_args([], _) --> [].
 
 
+% emitting
+
 fun(exp_add) --> !, "iadd".
 fun(exp_sub) --> !, "isub".
 fun(exp_mul) --> !, "imul".
 fun(exp_div) --> !, "idiv".
 fun(F) --> {term_string(F, FN)}, !, FN.
-
 
 push_int(0) --> !, indent, "iconst_0", newline.
 push_int(1) --> !, indent, "iconst_1", newline.
@@ -92,18 +100,31 @@ push_var(2) --> !, indent, "iload_2", newline.
 push_var(3) --> !, indent, "iload_3", newline.
 push_var(I) --> indent, "iload ", number(I), newline.
 
+
+% === SPECIAL CALLS ===
+
 push_io_out --> indent, "getstatic java/lang/System/out Ljava/io/PrintStream;", newline.
 call_println --> indent, "invokevirtual java/io/PrintStream/println(I)V", newline.
 
 
 % === GET LIST OF VARS USED ===
+%
+% We need to number all variables used in a method. Prolog doesn't really
+% have a good structure for this, so we just keep them on a list and use
+% their positions as Ids.
+
+% vars(+AST, -Vars)
+% get list of all variables used
 vars(AST, Vars) :- setof(I, L^E^member(sass(token(id(I), L), E), AST), Vars).
 vars(_, []).
 
+% get_var_id(+Token, +Vars, ?Id)
+% check Id of Token variable (by looking up its position)
 get_var_id(token(id(I), _), Vars, Id) :- nth1(Id, Vars, I).
 
 
 % === COMPUTE STACK LIMIT ===
+
 limit_stack(Stmts) --> {maplist(stmt_stack, Stmts, Sizes), max_member(S, Sizes)},
                        indent, ".limit stack ", number(S), newline.
 
@@ -126,6 +147,7 @@ exp_stack_args([], [], _).
 
 
 % === COMPUTE LOCALS LIMIT ===
+
 limit_locals(Vars) --> {length(Vars, N), N1 is N + 1}, indent, ".limit locals ", number(N1), newline.
 
 

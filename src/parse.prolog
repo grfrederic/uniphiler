@@ -29,25 +29,23 @@ exp1(T) --> exp2(T).
 
 % subtraction, factor out tail for left assoc
 exp2(E) --> exp3(H), exp2tail(H, E).
-exp2(E) --> exp3(E).
 
-exp2tail(A, A) --> [].
 exp2tail(A, E) --> t(minus_sign), !, exp3(S), exp2tail(exp_sub(A, S), E).
+exp2tail(A, A) --> [].
 
 
 % mul/div also factor out tail for left assoc
 exp3(E) --> exp4(H), exp3tail(H, E).
-exp3(T) --> exp4(T).
 
-exp3tail(A, A) --> [].
 exp3tail(A, E) --> t(asterisk), !, exp4(S), exp3tail(exp_mul(A, S), E).
 exp3tail(A, E) --> t(slash), !, exp4(S), exp3tail(exp_div(A, S), E).
+exp3tail(A, A) --> [].
 
 
 % just literals and variables
-exp4(E) --> t(left_parenthesis), !, exp(E), t(right_parenthesis).
 exp4(exp_lit(I)) --> nr(I), !.
 exp4(exp_var(I)) --> id(I), !.
+exp4(E) --> t(left_parenthesis), exp(E), t(right_parenthesis).
 
 
 % === TOKEN UTILS ===

@@ -9,16 +9,22 @@ compile_to_llvm(AST, LLVM) :-
     string_codes(LLVM, LLVM_).
 
 
-program_llvm(AST) --> "@formatStringNr = private constant [3 x i8] c\"%d\\00\"", newline,
-                      "@formatStringNl = private constant [2 x i8] c\"\\0A\\00\"", newline,
-                      "declare i32 @printf(i8*, ...)", newline,
+program_llvm(AST) --> printing_header,
                       newline,
-                      main(AST).
+                      function("main", AST).
 
+printing_header -->
+    "@formatStringNr = private constant [3 x i8] c\"%d\\00\"", newline,
+    "@formatStringNl = private constant [2 x i8] c\"\\0A\\00\"", newline,
+    "declare i32 @printf(i8*, ...)", newline.
 
-main(AST) --> sequence(main_start, stmt, "", main_end, AST).
-main_start --> {reset_reg_iter}, "define i32 @main() {", newline.
-main_end --> return, "}", newline.
+function(Name, AST) -->
+    {reset_reg_iter},
+    sequence(("define i32 @", Name, "() {", newline),  % start
+             stmt,                                     % elem
+             "",                                       % separator
+             (return, "}", newline),                   % end
+             AST).
 
 
 stmt(sass(I, E)) --> exp(E, R), {set_id_val(I, R)}.
@@ -37,8 +43,16 @@ exp(E, O) --> {compound_name_arguments(E, F, Args)},
 prepare_args([A|As], [O|Os]) --> exp(A, O), prepare_args(As, Os).
 prepare_args([], []) --> [].
 
+% emitting
 
-% === SPECIAL CALLS
+fun(exp_add) --> !, "add".
+fun(exp_sub) --> !, "sub".
+fun(exp_mul) --> !, "mul".
+fun(exp_div) --> !, "sdiv".
+fun(F) --> {term_string(F, FN)}, FN.
+
+
+% === SPECIAL CALLS ===
 
 return --> indent, "ret i32 0", newline.
 
@@ -46,53 +60,58 @@ print_nr_call(RI, RO) --> indent, reg(RO), " = call i32 (i8*, ...) @printf(i8* g
 print_nl_call(RO) --> indent, reg(RO), " = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @formatStringNl, i64 0, i64 0))", newline.
 
 
-
 % === HANDLING OF VARIABLE ITERATIONS ===
 
-% this avoids two issues:
-%   * multiple assignments to the same var
-%   * assignments of consts to vars
+% We're dealing with SSA, so we're not allowed to assign values to a register.
+% Because of that, when compiling to LLVM, it is necessary to substitute
+% subsequent uses of the same variable with the value/location of the value
+% assigned to it. This dynamic predicate stores this information during function
+% generation.
+
 :- dynamic('id_val_'/2).
 
+% set_id_val(+I, +V)
 set_id_val(I, V) :-
     unpack_id(I, J),
     retractall(id_val_(J, _)),
     asserta(id_val_(J, V)).
 
+% get_id_val(+I, ?V)
 get_id_val(I, V) :- unpack_id(I, J), id_val_(J, V).
 get_id_val(_, _) :- throw("Variable referenced before assignment").
 
 unpack_id(token(id(I), _Loc), I).
 
 
-% names unassigned registers
+% We will also need a supply of fresh register names. We handle this
+% with a dynamic predicate keeping track of the current variable iteration
+% during function generation.
+%
 :- dynamic('reg_iter_'/1).
 
+% reset generation counter to 1
 reset_reg_iter :-
     retractall(reg_iter_(_)),
     asserta(reg_iter_(1)).
 
+% get fresh iteration and inc counter
 get_reg_iter(N) :-
     reg_iter_(N),
     retractall(reg_iter_(_)),
     N1 is N + 1,
     asserta(reg_iter_(N1)).
 
+% reg(?O)
+% if the variable is free, bind it to a fresh register
 reg(O) --> {nonvar(O)}, !, O.
 reg(O) --> {var(O), get_reg_iter(N), string_concat("%", N, O)}, !, O.
 
 
 % === PRINTING UTILS ===
 
-fun(exp_add) --> !, "add".
-fun(exp_sub) --> !, "sub".
-fun(exp_mul) --> !, "mul".
-fun(exp_div) --> !, "sdiv".
-fun(F) --> {term_string(F, FN)}, !, FN.
-
 regs(Os) --> sequence(reg, ", ", Os).
 
-nr_to_res(token(nr(N), _Loc), R) :- term_string(N, R).
+nr_to_res(token(nr(N), _Loc), R) :- number_string(N, R).
 
 indent --> "  ".
 newline --> "\n".
