@@ -21,7 +21,7 @@ metadata(SourceFile) -->
     {file_base_name(SourceFile, Name),
      split_string(Name, ".", "", [ClassName|_]),
      term_string(SourceFile, Source)},
-    ".bytecode 58.0", newline,
+    ".bytecode 55.0", newline,
     ".source ", Source, newline,
     ".class ", ClassName, newline.
 

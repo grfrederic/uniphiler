@@ -9,7 +9,7 @@ compile_to_llvm(AST, LLVM) :-
     string_codes(LLVM, LLVM_),
     !. % compilation is deterministic
 
-compile_to_llvm(_, _,) :-
+compile_to_llvm(_, _) :-
     throw(compilation_failed).
 
 
