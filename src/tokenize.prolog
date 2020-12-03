@@ -21,15 +21,7 @@ token(token(T, L)) --> token_raw(T), lazy_list_location(L).
 % numbers are NOT allowed to have +/- in front of them
 token_raw(nr(N)) --> clot([C|Cs], digit), !, {number_codes(N, [C|Cs])}.
 token_raw(id(T)) --> clot([C|Cs], csym), !, {string_codes(T, [C|Cs])}.
-token_raw(plus_sign) --> "+", !.
-token_raw(minus_sign) --> "-", !.
-token_raw(semicolon) --> ";", !.
-token_raw(left_parenthesis) --> "(", !.
-token_raw(right_parenthesis) --> ")", !.
-token_raw(equals_sign) --> "=", !.
-token_raw(asterisk) --> "*", !.
-token_raw(slash) --> "/", !.
-token_raw(_) --> syntax_error(tokenizer_error).
+token_raw(sp(S)) --> [C], !, {string_codes(S, [C])}.
 
 % ignore whitespace
 iws --> clot(_, space).

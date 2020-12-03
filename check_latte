@@ -14,13 +14,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 SOURCE=$1
-OUT_LL="${SOURCE%.*}.ll"
-OUT_BC="${SOURCE%.*}.bc"
 
-echo -e "Compiling: ${SOURCE}"
-swipl -q -t halt ${ROOT_DIR}/src/compile_llvm.prolog ${SOURCE} > ${OUT_LL}
-echo -e "Generated: ${OUT_LL}"
 
-echo -e "Compiling: ${OUT_LL}"
-llvm-as ${OUT_LL}
-echo -e "Generated: ${OUT_BC}"
+echo -e "Checking: ${SOURCE}"
+swipl -q -t halt ${ROOT_DIR}/src/check_latte.prolog ${SOURCE}
