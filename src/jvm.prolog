@@ -58,7 +58,7 @@ limit_locals(Vars) --> {length(Vars, N), N1 is N + 1}, indent, ".limit locals ",
 
 
 % stmts(+Stmts, +Vars, -Stack)
-stmts(Stmts, Vars, Stack) --> stmts_(Stmts, Vars, Ss), {max_member(Stack, Ss)}.
+stmts(Stmts, Vars, Stack) --> stmts_(Stmts, Vars, Ss), {max_member_or_zero(Stack, Ss)}.
 
 stmts_([], _, []) --> [].
 stmts_([Stmt|Stmts], Vars, [Stack|Stacks]) -->
@@ -183,5 +183,10 @@ get_var_id(token(id(I), _), Vars, Id) :- nth1(Id, Vars, I), !.
 get_var_id(_, _, _) :- throw(reference_before_assignment).
 
 
+% === UTILS ===
+
 indent --> "  ".
 newline --> "\n".
+
+max_member_or_zero(M, L) :- max_member(M, L).
+max_member_or_zero(0, []).
