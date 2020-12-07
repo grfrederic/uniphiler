@@ -25,30 +25,29 @@ stmt(sexp(E)) --> exp(E).
 
 exp(E) --> exp1(E).
 
-% addition is right assoc
-exp1(exp_add(E1, E2)) --> exp2(E1), t(plus_sign), !, exp1(E2).
-exp1(T) --> exp2(T).
-
-
-% subtraction, factor out tail for left assoc
-exp2(E) --> exp3(H), exp2tail(H, E).
-
-exp2tail(A, E) --> t(minus_sign), !, exp3(S), exp2tail(exp_sub(A, S), E).
-exp2tail(A, A) --> [].
-
-
-% mul/div also factor out tail for left assoc
-exp3(E) --> exp4(H), exp3tail(H, E).
-
-exp3tail(A, E) --> t(asterisk), !, exp4(S), exp3tail(exp_mul(A, S), E).
-exp3tail(A, E) --> t(slash), !, exp4(S), exp3tail(exp_div(A, S), E).
-exp3tail(A, A) --> [].
-
+exp1(E) --> build(right, exp2, t(plus_sign), exp_add, E).
+exp2(E) --> build(left, exp3, t(minus_sign), exp_sub, E).
+exp3(E) --> build(left, exp4, t(asterisk), exp_mul, E).
+exp4(E) --> build(left, exp5, t(slash), exp_div, E).
 
 % just literals and variables
-exp4(exp_lit(I)) --> nr(I), !.
-exp4(exp_var(I)) --> id(I), !.
-exp4(E) --> t(left_parenthesis), exp(E), t(right_parenthesis).
+exp5(exp_lit(I)) --> nr(I), !.
+exp5(exp_var(I)) --> id(I), !.
+exp5(E) --> t(left_parenthesis), exp(E), t(right_parenthesis).
+
+
+% === BUILD ASSOC ===
+
+build(left, El, Sep, Op, Res) --> sequence(El, Sep, Els), {laf(Op, Els, Res)}.
+build(right, El, Sep, Op, Res) --> sequence(El, Sep, Els), {raf(Op, Els, Res)}.
+
+laf(Op, [H|T], R) :- laf_(Op, H, T, R).
+laf_(_, A, [], A).
+laf_(Op, A, [H|T], R) :- NA =.. [Op, A, H], laf_(Op, NA, T, R).
+
+raf(_, [E], E).
+raf(Op, [E1, E2], R) :- R =.. [Op, E1, E2].
+raf(Op, [H|T], R) :- raf(Op, T, RT), R =.. [Op, H, RT].
 
 
 % === TOKEN UTILS ===
