@@ -42,7 +42,7 @@ blck(blck(Stmts, Loc)) -->
     current_loc(Loc),
     s("{"),
     {complain_on_fail("in block", Loc)},
-    sequence(stmt_cut, Stmts),
+    sequence(stmt_cut, Stmts), !,
     s("}"), !.
 
 
