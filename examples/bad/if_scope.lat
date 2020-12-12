@@ -1,0 +1,10 @@
+int main() {
+    boolean b;
+
+    if (b)
+        int x = 3;
+    else
+        int x = 5;
+
+    return x;
+}

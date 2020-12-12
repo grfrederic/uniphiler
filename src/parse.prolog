@@ -200,8 +200,6 @@ if --> [token(if, _)].
 else --> [token(else, _)].
 while --> [token(while, _)].
 
-not_done, [T] --> [T].
-
 current_loc(Loc), [token(T, Loc)] --> [token(T, Loc)], !.
 
 current_loc_hard(Loc) --> current_loc(Loc), !.

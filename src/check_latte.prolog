@@ -20,5 +20,4 @@ parse_and_check(SourceFile) :-
     write("OK"), nl.
 
 parse_and_check(_) :-
-    write("some error occured during analysis"), nl,
     halt(1).
