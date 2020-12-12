@@ -6,6 +6,7 @@
 
 :- use_module('tokenize.prolog').
 :- use_module('checks.prolog').
+:- use_module('errors.prolog').
 
 
 parse(File, AST) :-
@@ -17,130 +18,103 @@ parse(File, AST) :-
 program(AST) --> sequence(topDef, AST).
 
 
-topDef(def(RetType, Id, Args, Body)) -->
-    current_loc(L),
-    complain_on_fail("in top level definition", L),
+topDef(def(Id, RetType, Args, Body, Loc)) -->
+    current_loc(Loc),
+    {complain_on_fail("in top level definition", Loc)},
     get_or_complain(type_(RetType), "expected type"),
     get_or_complain(id(Id), "expected valid id"),
     get_or_complain(s("("), "expected '('"),
     args(Args),
     get_or_complain(s(")"), "expected ')'"),
-    blck(Body, [Args]), !.
+    blck(Body), !.
 
 
 % === FUNCTION ARGS ===
 args(Args) -->
-    sequence(arg_, s(","), Args),
-    { check_all_args_different(Args) }.
+    sequence(arg_, s(","), Args).
 
 arg_((Id, T)) --> type_(T), id(Id).
 
 
 
 % === BLCK ===
-blck(Stmts, Cont) -->
-    {context_sub(Cont, ContCurr)},
-    current_loc(L),
+blck(blck(Stmts, Loc)) -->
+    current_loc(Loc),
     s("{"),
-    complain_on_fail("in block", L),
-    blck_stmts(Stmts, ContCurr),
+    {complain_on_fail("in block", Loc)},
+    sequence(stmt_cut, Stmts),
     s("}"), !.
-
-blck_stmts([Stmt|Stmts], Cont) -->
-    stmt(Stmt, Cont, ContNext), !,
-    blck_stmts(Stmts, ContNext).
-
-blck_stmts([], _) --> [].
-
 
 
 % === STMT ===
-% stmt(?Stmt, +ContCurr, -ContNext)
+% stmt_cut(?Stmt)
+stmt_cut(Stmt) --> stmt(Stmt), !.
 
-stmt(emptStmt, Cont, Cont) --> s(";").                  % Empty
-stmt(blckStmt(Stmt), Cont, Cont) --> blck(Stmt, Cont).  % BlockStmt
+% stmt(?Stmt)
+stmt(emptStmt) --> s(";").                  % Empty
+stmt(blckStmt(Block)) --> blck(Block).      % BlockStmt
 
 % IncrStmt
-stmt(incrStmt(I), Cont, Cont) -->
+stmt(incrStmt(I, Loc)) -->
+    current_loc(Loc),
     id(I), o("++"), !,
-    end_of_stmt,
-    {context_get_type(Cont, I, int)}.
+    end_of_stmt.
 
 % DecrStmt
-stmt(decrStmt(I), Cont, Cont) -->
+stmt(decrStmt(I, Loc)) -->
+    current_loc(Loc),
     id(I), o("--"), !,
-    end_of_stmt,
-    {context_get_type(Cont, I, int)}.
+    end_of_stmt.
 
 % DeclStmt
-stmt(declStmt(Type, Items), Cont, ContNext) -->
-    current_loc(L),
+stmt(declStmt(Type, Items, Loc)) -->
+    current_loc(Loc),
     type(Type), !,
-    complain_on_fail("in declaration", L),
+    {complain_on_fail("in declaration", Loc)},
     sequence(item, s(","), Items),
-    end_of_stmt,
-    {context_add_items(Items, Type, Cont, ContNext)}.
+    end_of_stmt.
 
 % AssStmt
-stmt(assgStmt(I, E), Cont, Cont) -->
-    current_loc(L),
+stmt(assgStmt(I, E, Loc)) -->
+    current_loc(Loc),
     id(I), o("="), !,
-    complain_on_fail("in assignment", L),
+    {complain_on_fail("in assignment", Loc)},
     expr(E),
-    end_of_stmt,
-    { context_type_expr(Cont, T, E),
-      context_get_type(Cont, I, T) }.
-
+    end_of_stmt.
 
 % RetStmt / VRetStmt
-stmt(Ret, Cont, Cont) -->
-    current_loc(L),
+stmt(Ret) -->
+    current_loc(Loc),
     return, !,
-    complain_on_fail("in return", L),
+    {complain_on_fail("in return", Loc)},
     (   s(";")
-    ->  !, {Ret = rtrnStmt}
-    ;   expr(E), s(";"), {Ret = rtrnStmt(E)}
+    ->  !, {Ret = rtrnStmt(Loc)}
+    ;   expr(E), s(";"), {Ret = rtrnStmt(E, Loc)}
     ).
 
 % if
-stmt(Cond, Cont, Cont) -->
-    current_loc(L),
+stmt(Cond) -->
+    current_loc(Loc),
     if, !,
-    complain_on_fail("in if statement", L),
-    s("("), expr(E), s(")"), stmt(S, Cont, _ContIf),
+    {complain_on_fail("in if statement", Loc)},
+    s("("), expr(E), s(")"), stmt(ST),
     (   else
-    ->  !, stmt(SE, Cont, _ContElse), {Cond = condStmt(E, S, SE)}
-    ;   {Cond = condStmt(E, S)}
-    ),
-    { context_type_expr(Cont, T, E),
-      (   T == boolean
-      ->  true
-      ;   write("'while' condition should evaluate to boolean but is "),
-          write(T), nl,
-          fail
-      )
-    }.
+    ->  !, stmt(SF), {Cond = condStmt(E, ST, SF, Loc)}
+    ;   {Cond = condStmt(E, ST, emptStmt, Loc)}
+    ).
 
 % while
-stmt(whilStmt(E, S), Cont, Cont) -->
-    current_loc(L),
+stmt(whilStmt(E, S, Loc)) -->
+    current_loc(Loc),
     while, !,
-    complain_on_fail("in while", L),
-    s("("), expr(E), s(")"), stmt(S, Cont, _ContWhile),
-    { context_type_expr(Cont, T, E),
-      (   T == boolean
-      ->  true
-      ;   write("'if' condition should evaluate to boolean but is "),
-          write(T), nl,
-          fail
-      )
-    }.
+    {complain_on_fail("in while", Loc)},
+    s("("), expr(E), s(")"), stmt(S).
 
 % expr
-stmt(exprStmt(E), Cont, Cont) -->
+stmt(exprStmt(E, Loc)) -->
+    current_loc(Loc),
     expr(E),
-    end_of_stmt,
-    {context_type_expr(Cont, _, E)}.
+    end_of_stmt.
 
 end_of_stmt --> get_or_complain(s(";"), "expected ';'").
 
@@ -154,37 +128,10 @@ item(Item) -->
     ).
 
 
-context_add_items([lit(I)|Items], Type, Cont, ContFinal) :-
-    !,
-    context_insert(Cont, I, Type, ContNext),
-    context_add_items(Items, Type, ContNext, ContFinal).
-
-context_add_items([ass(I, E)|Items], Type, Cont, ContFinal) :-
-    !,
-    context_insert(Cont, I, Type, ContNext),
-    context_type_expr(ContNext, ExprType, E),
-    (   Type = ExprType
-    ->  !, true
-    ;   !,
-        write("expression for '"), write(I),
-        write("' should be '"), write(Type),
-        write("' but is '"), write(ExprType),
-        write("'"), nl, fail),
-    context_add_items(Items, Type, ContNext, ContFinal).
-
-context_add_items([], _, Cont, Cont).
-
-
 % === TYPES ===
 type_(T) --> type(T).
 
 % TODO(frdrc): complex types
-
-% type_(_) -->
-%     id(Id),
-%     { term_string(Id, Ids), term_string(Loc, Locs),
-%       atomics_to_string(["Unknown type ", Ids, " at location: ", Locs], Msg),
-%       throw(Msg) }.
 
 
 
@@ -260,17 +207,8 @@ current_loc(Loc), [token(T, Loc)] --> [token(T, Loc)], !.
 current_loc_hard(Loc) --> current_loc(Loc), !.
 current_loc_hard("end of file") --> [].
 
-
-
-% === ERROR MSGS ===
-
-complain_at_loc(S, L) --> { write(S), write(" at "), write(L), nl }.
-
-complain_on_fail(_, _) --> [].
-complain_on_fail(S, L) --> complain_at_loc(S, L), {fail}.
-
 get_or_complain(G, _) --> call(G), !.
-get_or_complain(_, S) --> current_loc_hard(L), complain_at_loc(S, L), {fail}.
+get_or_complain(_, S) --> current_loc_hard(L), {complain_at_loc(S, L), fail}.
 
 
 % === BUILD BINARY OPS ===
