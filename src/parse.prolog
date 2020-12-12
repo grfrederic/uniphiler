@@ -1,18 +1,16 @@
 :- module(parse, [parse/2]).
 
+
 :- use_module(library(dcg/basics)).
 :- use_module(library(dcg/high_order)).
 
 :- use_module('tokenize.prolog').
+:- use_module('checks.prolog').
 
 
 parse(File, AST) :-
     tokenize(File, Tokens),
-    write(Tokens),  % TODO(frdrc): just debug
     phrase(program(AST), Tokens), !. % parser is deterministic
-
-parse(_, _) :-
-    throw(parser_failed).
 
 
 % === PROGRAM ===
@@ -20,119 +18,279 @@ program(AST) --> sequence(topDef, AST).
 
 
 topDef(def(RetType, Id, Args, Body)) -->
-    type_(RetType), id(Id), sp("("), args(Args), sp(")"), blck(Body).
+    current_loc(L),
+    complain_on_fail("in top level definition", L),
+    get_or_complain(type_(RetType), "expected type"),
+    get_or_complain(id(Id), "expected valid id"),
+    get_or_complain(s("("), "expected '('"),
+    args(Args),
+    get_or_complain(s(")"), "expected ')'"),
+    blck(Body, [Args]), !.
 
 
 % === FUNCTION ARGS ===
-args(Args) --> sequence(arg_, sp(","), Args).
-arg_(ar(T, Id)) --> type_(T), id(Id).
+args(Args) -->
+    sequence(arg_, s(","), Args),
+    { check_all_args_different(Args) }.
+
+arg_((Id, T)) --> type_(T), id(Id).
+
 
 
 % === BLCK ===
-blck(Stmts) --> sp("{"), sequence(stmt, Stmts), sp("}").
+blck(Stmts, Cont) -->
+    {context_sub(Cont, ContCurr)},
+    current_loc(L),
+    s("{"),
+    complain_on_fail("in block", L),
+    blck_stmts(Stmts, ContCurr),
+    s("}"), !.
+
+blck_stmts([Stmt|Stmts], Cont) -->
+    stmt(Stmt, Cont, ContNext), !,
+    blck_stmts(Stmts, ContNext).
+
+blck_stmts([], _) --> [].
+
 
 
 % === STMT ===
-stmt(emptStmt) --> sp(";").                                             % Empty
-stmt(blckStmt(Stmt)) --> blck(Stmt).                                    % BlockStmt
-stmt(declStmt(Items)) --> sequence(item, sp(","), Items), sp(";").      % DeclStmt
-stmt(assgStmt(I, E)) --> id(I), sp("="), expr(E), sp(";").              % AssStmt
-stmt(incrStmt(I)) --> id(I), sp("+"), sp("+"), sp(";").                 % IncrStmt
-stmt(decrStmt(I)) --> id(I), sp("-"), sp("-"), sp(";").                 % DecrStmt
-stmt(rtrnStmt(E)) --> id("return"), expr(E), sp(";").                   % RetStmt
-stmt(rtrnStmt) --> id("return"), sp(";").                               % VRetStmt
+% stmt(?Stmt, +ContCurr, -ContNext)
+
+stmt(emptStmt, Cont, Cont) --> s(";").                  % Empty
+stmt(blckStmt(Stmt), Cont, Cont) --> blck(Stmt, Cont).  % BlockStmt
+
+% IncrStmt
+stmt(incrStmt(I), Cont, Cont) -->
+    id(I), o("++"), !,
+    end_of_stmt,
+    {context_get_type(Cont, I, int)}.
+
+% DecrStmt
+stmt(decrStmt(I), Cont, Cont) -->
+    id(I), o("--"), !,
+    end_of_stmt,
+    {context_get_type(Cont, I, int)}.
+
+% DeclStmt
+stmt(declStmt(Type, Items), Cont, ContNext) -->
+    current_loc(L),
+    type(Type), !,
+    complain_on_fail("in declaration", L),
+    sequence(item, s(","), Items),
+    end_of_stmt,
+    {context_add_items(Items, Type, Cont, ContNext)}.
+
+% AssStmt
+stmt(assgStmt(I, E), Cont, Cont) -->
+    current_loc(L),
+    id(I), o("="), !,
+    complain_on_fail("in assignment", L),
+    expr(E),
+    end_of_stmt,
+    { context_type_expr(Cont, T, E),
+      context_get_type(Cont, I, T) }.
+
+
+% RetStmt / VRetStmt
+stmt(Ret, Cont, Cont) -->
+    current_loc(L),
+    return, !,
+    complain_on_fail("in return", L),
+    (   s(";")
+    ->  !, {Ret = rtrnStmt}
+    ;   expr(E), s(";"), {Ret = rtrnStmt(E)}
+    ).
 
 % if
-stmt(condStmt(E, S)) -->
-    id("if"), sp("("), expr(E), sp(")"), stmt(S).
-
-% if-else
-stmt(condStmt(E, S1, S2)) -->
-    id("if"), sp("("), expr(E), sp(")"), stmt(S1), id("else"), stmt(S2).
+stmt(Cond, Cont, Cont) -->
+    current_loc(L),
+    if, !,
+    complain_on_fail("in if statement", L),
+    s("("), expr(E), s(")"), stmt(S, Cont, _ContIf),
+    (   else
+    ->  !, stmt(SE, Cont, _ContElse), {Cond = condStmt(E, S, SE)}
+    ;   {Cond = condStmt(E, S)}
+    ),
+    { context_type_expr(Cont, T, E),
+      (   T == boolean
+      ->  true
+      ;   write("'while' condition should evaluate to boolean but is "),
+          write(T), nl,
+          fail
+      )
+    }.
 
 % while
-stmt(whilStmt(E, S)) -->
-    id("while"), sp("("), expr(E), sp(")"), stmt(S).
+stmt(whilStmt(E, S), Cont, Cont) -->
+    current_loc(L),
+    while, !,
+    complain_on_fail("in while", L),
+    s("("), expr(E), s(")"), stmt(S, Cont, _ContWhile),
+    { context_type_expr(Cont, T, E),
+      (   T == boolean
+      ->  true
+      ;   write("'if' condition should evaluate to boolean but is "),
+          write(T), nl,
+          fail
+      )
+    }.
 
 % expr
-stmt(exprStmt(E)) -->
-    expr(E), sp(";").
+stmt(exprStmt(E), Cont, Cont) -->
+    expr(E),
+    end_of_stmt,
+    {context_type_expr(Cont, _, E)}.
+
+end_of_stmt --> get_or_complain(s(";"), "expected ';'").
 
 
 % === ITEM aka L-VALUE
-item(lit(I)) --> id(I).
-item(ass(I, E)) --> id(I), sp("="), expr(E).
+item(Item) -->
+    id(I),
+    (   (o("="), expr(E))
+    ->  !, {Item = ass(I, E)} 
+    ;   {Item = lit(I)}
+    ).
+
+
+context_add_items([lit(I)|Items], Type, Cont, ContFinal) :-
+    !,
+    context_insert(Cont, I, Type, ContNext),
+    context_add_items(Items, Type, ContNext, ContFinal).
+
+context_add_items([ass(I, E)|Items], Type, Cont, ContFinal) :-
+    !,
+    context_insert(Cont, I, Type, ContNext),
+    context_type_expr(ContNext, ExprType, E),
+    (   Type = ExprType
+    ->  !, true
+    ;   !,
+        write("expression for '"), write(I),
+        write("' should be '"), write(Type),
+        write("' but is '"), write(ExprType),
+        write("'"), nl, fail),
+    context_add_items(Items, Type, ContNext, ContFinal).
+
+context_add_items([], _, Cont, Cont).
 
 
 % === TYPES ===
-type_(type("int")) --> id("int").
-type_(type("string")) --> id("string").
-type_(type("boolean")) --> id("boolean").
-type_(type("void")) --> id("void").
+type_(T) --> type(T).
 
-type_(_) -->
-    id(Id),
-    { term_string(Id, Ids), term_string(Loc, Locs),
-      atomics_to_string(["Unknown type ", Ids, " at location: ", Locs], Msg),
-      throw(Msg) }.
+% TODO(frdrc): complex types
+
+% type_(_) -->
+%     id(Id),
+%     { term_string(Id, Ids), term_string(Loc, Locs),
+%       atomics_to_string(["Unknown type ", Ids, " at location: ", Locs], Msg),
+%       throw(Msg) }.
+
 
 
 % === EXPR ===
-expr(int(N)) --> nr(N).
+expr(E) --> expr0(E).
 
+expr0(E) --> assocr(expr1, orop, E).
+expr1(E) --> assocl(expr2, andop, E).
+expr2(E) --> assocl(expr3, relop, E).
+expr3(E) --> assocl(expr4, addop, E).
+expr4(E) --> assocl(expr5, mulop, E).
 
-%-- Expressions ---------------------------------------------
-%Neg.       Expr5 ::= "-" Expr6 ;
-%Not.       Expr5 ::= "!" Expr6 ;
-%EMul.      Expr4 ::= Expr4 MulOp Expr5 ;
-%EAdd.      Expr3 ::= Expr3 AddOp Expr4 ;
-%ERel.      Expr2 ::= Expr2 RelOp Expr3 ;
-%EAnd.      Expr1 ::= Expr2 "&&" Expr1 ;
-%EOr.       Expr ::= Expr1 "||" Expr ;
-
-% % === EXPRESSIONS ===
-% 
-% exp(E) --> exp1(E).
-% 
-% % addition is right assoc
-% exp1(exp_add(E1, E2)) --> exp2(E1), t(plus_sign), !, exp1(E2).
-% exp1(T) --> exp2(T).
-% 
-% % mul/div also factor out tail for left assoc
-% exp3(E) --> exp4(H), exp3tail(H, E).
-% 
-% exp3tail(A, E) --> t(asterisk), !, exp4(S), exp3tail(exp_mul(A, S), E).
-% exp3tail(A, E) --> t(slash), !, exp4(S), exp3tail(exp_div(A, S), E).
-% exp3tail(A, A) --> [].
-% 
+expr5(eneg(E)) --> o("-"), !, expr6(E).
+expr5(enot(E)) --> o("!"), !, expr6(E).
+expr5(E) --> expr6(E).
 
 % just literals and variables
-%EVar.      Expr6 ::= Ident ;
-%ELitInt.   Expr6 ::= Integer ;
-%ELitTrue.  Expr6 ::= "true" ;
-%ELitFalse. Expr6 ::= "false" ;
-%EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
-%EString.   Expr6 ::= String ;
-expr4(expr_id(I)) --> id(I), !.
-expr6(expr_nr(I)) --> nr(I), !.
-expr6(true) --> id("true"), !.
-expr6(false) --> id("false"), !.
-expr6(expr_ap(I, Es)) --> id(I), sp("("), sequence(expr, sp(","), Es), sp(")").
-expr6(expr_in(E)) --> sp("("), expr(E), sp(")").
+expr6(expr_str(S)) --> [token(lit_str(S), _)], !.
+expr6(expr_int(I)) --> [token(lit_int(I), _)], !.
+expr6(expr_bool(B)) --> [token(lit_bool(B), _)], !.
+
+expr6(expr_ap(I, Es)) --> id(I), s("("), !, sequence(expr, s(","), Es), s(")").
+expr6(expr_id(I)) --> id(I), !.
+expr6(expr_in(E)) --> s("("), !, expr(E), s(")").
+
+
+
+% === OPS ===
+orop(eor) --> o("||").
+andop(eand) --> o("&&").
+
+relop(ene) --> o("!=").
+relop(eeq) --> o("==").
+relop(ele) --> o("<=").
+relop(ege) --> o(">=").
+relop(elt) --> o("<").
+relop(egt) --> o(">").
+
+mulop(emod) --> o("%").
+mulop(ediv) --> o("/").
+mulop(eprd) --> o("*").
+
+addop(epls) --> o("+").
+addop(emin) --> o("-").
+
 
 
 % === TOKEN UTILS ===
 
-sp(Special) --> [token(sp(Special), _)].
-nr(token(nr(I), Loc)) --> [token(nr(I), Loc)].
+s(T, L) --> [token(s(T), L)].
+s(T) --> s(T, _).
 
+id(I, L) --> [token(id(I), L)].
 id(I) --> id(I, _).
-id(I, Loc) --> [token(id(I), Loc)].
+
+type(T, L) --> [token(type(T), L)].
+type(T) --> type(T, _).
+
+o(T, L) --> [token(operator(T), L)].
+o(T) --> o(T, _).
+
+return(L) --> [token(return, L)].
+return --> return(_).
+
+if --> [token(if, _)].
+else --> [token(else, _)].
+while --> [token(while, _)].
+
+not_done, [T] --> [T].
+
+current_loc(Loc), [token(T, Loc)] --> [token(T, Loc)], !.
+
+current_loc_hard(Loc) --> current_loc(Loc), !.
+current_loc_hard("end of file") --> [].
 
 
-% === DEBUG ===
-:- trace(topDef).
-:- trace(blck).
-:- trace(stmt).
-%:- trace(type_).
-%:- trace(sp).
+
+% === ERROR MSGS ===
+
+complain_at_loc(S, L) --> { write(S), write(" at "), write(L), nl }.
+
+complain_on_fail(_, _) --> [].
+complain_on_fail(S, L) --> complain_at_loc(S, L), {fail}.
+
+get_or_complain(G, _) --> call(G), !.
+get_or_complain(_, S) --> current_loc_hard(L), complain_at_loc(S, L), {fail}.
+
+
+% === BUILD BINARY OPS ===
+
+assocl(El, Op, Res) --> opsepseq(El, Op, Es, Os), {laf(Os, Es, Res)}.
+assocr(El, Op, Res) --> opsepseq(El, Op, Es, Os), {raf(Os, Es, Res)}.
+
+
+% parse operator separated sequence
+opsepseq(El, Op, [E|Es], Os) --> call(El, E), opsepseq_(Es, Os, El, Op).
+
+opsepseq_([E|Es], [O|Os], El, Op) --> call(Op, O), call(El, E), !, opsepseq_(Es, Os, El, Op).
+opsepseq_([], [], _, _) --> [].
+    
+
+% build expr
+laf(Os, [H|T], R) :- laf_(Os, H, T, R).
+laf_(_, A, [], A).
+laf_([O|Os], A, [H|T], R) :- NA =.. [O, A, H], laf_(Os, NA, T, R).
+
+raf(_, [E], E).
+raf([O], [E1, E2], R) :- R =.. [O, E1, E2].
+raf([O|Os], [H|T], R) :- raf(Os, T, RT), R =.. [O, H, RT].
