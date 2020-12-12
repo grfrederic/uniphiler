@@ -16,7 +16,8 @@ main(_) :-
 
 parse_and_check(SourceFile) :-
     parse(SourceFile, AST),
-    all_checks(AST).
+    all_checks(AST),
+    write("OK"), nl.
 
 parse_and_check(_) :-
     write("some error occured during analysis"), nl,

@@ -28,7 +28,7 @@ all_args_different(Args) :-
     same_length(ArgNamesSet, ArgNamesBag), !.
 
 all_args_different(_) :-
-    write("argument names have duplicates"), nl, fail.
+    error, write("argument names have duplicates"), nl, fail.
 
 extract_arg_name((ArgName, _), ArgName).
 extract_arg_type((_, ArgType), ArgType).
@@ -56,7 +56,7 @@ type_check_def(def(Id, RetType, Args, Body, Loc)) :-
     ->  !, true
     ;   (   RetType = void
         ->  !, true
-        ;   write("control flow exits without return"), nl, fail
+        ;   error, write("control flow exits without return"), nl, fail
         )
     ).
 
@@ -98,7 +98,8 @@ type_check_stmt(assgStmt(Id, Expr, Loc), _RetType, 0, Cont, Cont) :- !,
     context_type_expr(Cont, ExprType, Expr),
     context_get_type(Cont, Id, Type),
     (   Type \= ExprType
-    ->  write("expression for '"), write(Id),
+    ->  error,
+        write("expression for '"), write(Id),
         write("' should be '"), write(Type),
         write("' but is '"), write(ExprType),
         write("'"), nl, fail
@@ -109,7 +110,8 @@ type_check_stmt(condStmt(E, ST, SF, Loc), RetType, SurelyReturns, Cont, ContNext
     complain_on_fail("in if-statement", Loc),
     context_type_expr(Cont, Type, E),
     (   Type \= boolean
-    ->  write("'if' condition should evaluate to boolean but is "),
+    ->  error,
+        write("'if' condition should evaluate to boolean but is "),
         write(Type), nl,
         fail
     ;   true
@@ -130,7 +132,8 @@ type_check_stmt(whilStmt(E, S, Loc), RetType, SurelyReturns, Cont, ContNext) :- 
     complain_on_fail("in while-statement", Loc),
     context_type_expr(Cont, Type, E),
     (   Type \= boolean
-    ->  write("'while' condition should evaluate to boolean but is "),
+    ->  error,
+        write("'while' condition should evaluate to boolean but is "),
         write(Type), nl,
         fail
     ;   true
@@ -145,7 +148,8 @@ type_check_stmt(rtrnStmt(Loc), RetType, 1, Cont, Cont) :- !,
     complain_on_fail("in return", Loc),
     (   void = RetType
     ->  true
-    ;   write("should return '"), write(RetType),
+    ;   error,
+        write("should return '"), write(RetType),
         write("' but tried to return 'void'"),
         nl, fail
     ).
@@ -155,7 +159,8 @@ type_check_stmt(rtrnStmt(E, Loc), RetType, 1, Cont, Cont) :- !,
     context_type_expr(Cont, Type, E),
     (   Type = RetType
     ->  true
-    ;   write("should return '"), write(RetType),
+    ;   error,
+        write("should return '"), write(RetType),
         write("' but tried to return '"), write(Type), write("'"),
         nl, fail
     ).
@@ -180,7 +185,7 @@ context_add_items([ass(I, E)|Items], Type, Cont, ContFinal) :-
     context_type_expr(ContNext, ExprType, E),
     (   Type = ExprType
     ->  !, true
-    ;   !,
+    ;   !, error,
         write("expression for '"), write(I),
         write("' should be '"), write(Type),
         write("' but is '"), write(ExprType),
@@ -231,7 +236,7 @@ get_declared_function(FuncId, RetType, ArgTypes) :-
     declared_function(FuncId, RetType, ArgTypes), !.
 
 get_declared_function(FuncId, _RetType, _ArgTypes) :-
-    write("function '"), write(FuncId), write("' not declared"), nl, fail.
+    error, write("function '"), write(FuncId), write("' not declared"), nl, fail.
 
 
 registered_functions(expr_in, "()", Alpha, [Alpha], _).
@@ -257,6 +262,7 @@ registered_functions(epls, "+", str, [str, str], _).
 registered_functions(emin, "-", int, [int, int], _).
 
 registered_functions(F, _, _, _) :-
+    error,
     write("couldnt match type for function: "),
     write(F), nl,
     fail.
@@ -265,7 +271,8 @@ registered_functions(F, _, _, _) :-
 args_match(FuncName, As, Bs) :-
     (   same_length(As, Bs)
     ->  args_match_(As, Bs, 1, FuncName)
-    ;   length(As, LA), length(Bs, LB),
+    ;   error,
+        length(As, LA), length(Bs, LB),
         write("function '"), write(FuncName), write("' expects "),
         write(LA), write(" arguments but got "),
         write(LB), nl,
@@ -277,7 +284,7 @@ args_match_([A|As], [B|Bs], N, FuncName) :-
     N1 is N + 1,
     (   A = B
     ->  !, args_match_(As, Bs, N1, FuncName)
-    ;   !,
+    ;   error,
         write("argument "), write(N),
         write(" of "), write(FuncName),
         write(" should be of type "), write(A),
@@ -304,20 +311,21 @@ context_get_type(Context, Name, Type) :-
     map_get_type(Map, Name, TypeFound), !,
     (   Type = TypeFound
     ->  true
-    ;   write("wrong type: '"), write(Name),
+    ;   error,
+        write("wrong type: '"), write(Name),
         write("' has type '"), write(TypeFound),
         write("' but was assigned type '"), write(Type),
         write("'"), nl, fail
     ).
 
 context_get_type(_, _, _) :-
-    write("variable not declared"), nl, fail.
+    error, write("variable not declared"), nl, fail.
 
 
 % map_insert(+Map, +Name, +Type, -NewMap)
 map_insert(Map, Name, _, _) :-
     map_get_type(Map, Name, _), !,
-    write("redeclaration of variable"), nl, fail.
+    error, write("redeclaration of variable"), nl, fail.
 
 map_insert(Map, Name, Type, [(Name, Type)|Map]).
 

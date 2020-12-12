@@ -24,9 +24,9 @@ topDef(def(Id, RetType, Args, Body, Loc)) -->
     get_or_complain(type_(RetType), "expected type"),
     get_or_complain(id(Id), "expected valid id"),
     get_or_complain(s("("), "expected '('"),
-    args(Args),
+    get_or_complain(args(Args), "expected args"),
     get_or_complain(s(")"), "expected ')'"),
-    blck(Body), !.
+    get_or_complain(blck(Body), "expected body"), !.
 
 
 % === FUNCTION ARGS ===
@@ -208,7 +208,7 @@ current_loc_hard(Loc) --> current_loc(Loc), !.
 current_loc_hard("end of file") --> [].
 
 get_or_complain(G, _) --> call(G), !.
-get_or_complain(_, S) --> current_loc_hard(L), {complain_at_loc(S, L), fail}.
+get_or_complain(_, S) --> error, current_loc_hard(L), {complain_at_loc(S, L), fail}.
 
 
 % === BUILD BINARY OPS ===

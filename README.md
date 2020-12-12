@@ -1,20 +1,12 @@
 ### Uniphiler: the compiler you love!
 
-This is a compiler written in Prolog using DCG for the simple Instant language.
-It compiles to both JVM and LLVM.
+This is a compiler written in Prolog using DCG for the language Latte (for now only front end).
 
 
 #### Usage
-For JVM:
 
 ```
-> ./insc_jvm path/to/source.ins
+> ./latc path/to/source.lat
 ```
 
-For LLVM:
-
-```
-> ./insc_llvm path/to/source.ins
-```
-
-The executables `insc_jvm` and `insc_llvm` are just wrappers for [swi-prolog](https://www.swi-prolog.org/) running the scripts `src/compile_jvm.prolog` and `src/compile_llvm.prolog` and then respectively [Jasmin](http://jasmin.sourceforge.net/) or [llvm-asm](https://llvm.org/docs/CommandGuide/llvm-as.html).
+The executable `latc` is just a wrapper for [swi-prolog](https://www.swi-prolog.org/) running the scripts `src/check_latte.prolog`.

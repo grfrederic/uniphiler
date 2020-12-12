@@ -4,6 +4,8 @@
 :- use_module(library(dcg/high_order)).
 :- use_module(library(pure_input)).
 
+:- use_module('errors.prolog').
+
 
 tokenize(File, Tokens) :-
     phrase_from_file(tokens(Tokens), File).
@@ -23,6 +25,7 @@ maybe_token_(none) -->
     (   (string(_Comment), "*/")
     ->  []
     ;   lazy_list_location(L),
+        error,
         { term_string(L, Locs),
           atomics_to_string(["Started comment (at ", Locs, ") but never finished.\n"], Msg),
           write(Msg),
@@ -68,7 +71,7 @@ maybe_token_(T) --> clot([C|Cs], csym), {char_type(C, csymf), string_codes(S, [C
 
 % stop and error
 maybe_token_(_) --> eos, !, {fail}.
-maybe_token_(_) --> syntax_error("failed to parse token").
+maybe_token_(_) --> error, syntax_error("failed to parse token").
 
 
 % dispatch strings
