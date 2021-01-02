@@ -14,6 +14,12 @@ parse(File, AST) :-
     phrase(program(AST), Tokens), !. % parser is deterministic
 
 
+parse(_, _) :-
+    error_stack_print,
+    error_stack_clear,
+    fail.
+
+
 % === PROGRAM ===
 program(AST) --> sequence(topDef, AST).
 
@@ -206,7 +212,7 @@ current_loc_hard(Loc) --> current_loc(Loc), !.
 current_loc_hard("end of file") --> [].
 
 get_or_complain(G, _) --> call(G), !.
-get_or_complain(_, S) --> error, current_loc_hard(L), {complain_at_loc(S, L), fail}.
+get_or_complain(_, S) --> current_loc_hard(L), {error(S, L)}.
 
 
 % === BUILD BINARY OPS ===

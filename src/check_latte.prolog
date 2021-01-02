@@ -17,7 +17,7 @@ main(_) :-
 parse_and_check(SourceFile) :-
     parse(SourceFile, AST),
     all_checks(AST),
-    write("OK"), nl.
+    writeln("OK").
 
 parse_and_check(_) :-
     halt(1).

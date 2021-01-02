@@ -25,11 +25,7 @@ maybe_token_(none) -->
     (   (string(_Comment), "*/")
     ->  []
     ;   lazy_list_location(L),
-        error,
-        { term_string(L, Locs),
-          atomics_to_string(["Started comment (at ", Locs, ") but never finished.\n"], Msg),
-          write(Msg),
-          fail }
+        { error(["started comment but never finished"], L) }
     ).
 
 % whitespace
@@ -71,7 +67,7 @@ maybe_token_(T) --> clot([C|Cs], csym), {char_type(C, csymf), string_codes(S, [C
 
 % stop and error
 maybe_token_(_) --> eos, !, {fail}.
-maybe_token_(_) --> error, syntax_error("failed to parse token").
+maybe_token_(_) --> error("failed to parse token").
 
 
 % dispatch strings

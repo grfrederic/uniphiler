@@ -9,14 +9,17 @@ all_checks(AST) :-
     check_all_args_different(AST),
     check_typing_and_declarations(AST).
 
+all_checks(_) :-
+    error_stack_print,
+    error_stack_clear,
+    fail.
 
 
 % === ARGS DIFFERENT ===
 
 check_all_args_different([]).
 check_all_args_different([def(Id, _RetType, Args, _Body, Loc)|AST]) :-
-    atomics_to_string(["in top level definition of '", Id, "'"], Msg),
-    complain_on_fail(Msg, Loc),
+    complain_on_fail(["in top level definition of", Id], Loc),
     all_args_different(Args),
     !,
     check_all_args_different(AST).
@@ -28,7 +31,7 @@ all_args_different(Args) :-
     same_length(ArgNamesSet, ArgNamesBag), !.
 
 all_args_different(_) :-
-    error, write("argument names have duplicates"), nl, fail.
+    error("argument names have duplicates").
 
 extract_arg_name((ArgName, _), ArgName).
 extract_arg_type((_, ArgType), ArgType).
@@ -38,6 +41,7 @@ extract_arg_type((_, ArgType), ArgType).
 
 check_typing_and_declarations(AST) :-
     maplist(extract_def_type, AST),
+    type_check_main,
     maplist(type_check_def, AST),
     retractall(declared_function(_, _, _)).
 
@@ -45,19 +49,25 @@ check_typing_and_declarations(AST) :-
 :- dynamic('declared_function'/3).
 extract_def_type(def(Id, RetType, Args, _Body, _Loc)) :-
     maplist(extract_arg_type, Args, ArgTypes),
-    assertz(declared_function(Id, RetType, ArgTypes)).
+    ( declared_function(Id, _, _), !, error(["redaclaration of", Id])
+    ; assertz(declared_function(Id, RetType, ArgTypes))
+    ).
+
+
+type_check_main :-
+    complain_on_fail("main not declared"),
+    declared_function("main", RetType, _ArgTypes), !,
+    ( RetType = int, !
+    ; error("main should return 'int'")
+    ).
 
 
 type_check_def(def(Id, RetType, Args, Body, Loc)) :-
-    atomics_to_string(["in top level definition of '", Id, "'"], Msg),
-    complain_on_fail(Msg, Loc),
+    complain_on_fail(["in top level definition of", Id], Loc),
     type_check_blck(Body, RetType, SurelyReturns, [Args]),
-    (   SurelyReturns = 1
-    ->  !, true
-    ;   (   RetType = void
-        ->  !, true
-        ;   error, write("control flow exits without return"), nl, fail
-        )
+    ( SurelyReturns = 1, !
+    ; RetType = void, !
+    ; error("control flow exits without return")
     ).
 
 
@@ -80,13 +90,11 @@ type_check_stmt(blckStmt(Block), RetType, SurelyReturns, Cont, Cont) :- !,
     type_check_blck(Block, RetType, SurelyReturns, Cont).
 
 type_check_stmt(incrStmt(I, Loc), _RetType, 0, Cont, Cont) :- !,
-    atomics_to_string(["'", I, "' should be of type 'int' in statement"], Msg),
-    complain_on_fail(Msg, Loc),
+    complain_on_fail([I, "should be of type 'int' in statement"], Loc),
     context_get_type(Cont, I, int).
 
 type_check_stmt(decrStmt(I, Loc), _RetType, 0, Cont, Cont) :- !,
-    atomics_to_string(["'", I, "' should be of type 'int' in statement"], Msg),
-    complain_on_fail(Msg, Loc),
+    complain_on_fail([I, "should be of type 'int' in statement"], Loc),
     context_get_type(Cont, I, int).
 
 type_check_stmt(declStmt(Type, Items, Loc), _RetType, 0, Cont, ContNext) :- !,
@@ -97,46 +105,32 @@ type_check_stmt(assgStmt(Id, Expr, Loc), _RetType, 0, Cont, Cont) :- !,
     complain_on_fail("in assignment", Loc),
     context_type_expr(Cont, ExprType, Expr),
     context_get_type(Cont, Id, Type),
-    (   Type \= ExprType
-    ->  error,
-        write("expression for '"), write(Id),
-        write("' should be '"), write(Type),
-        write("' but is '"), write(ExprType),
-        write("'"), nl, fail
-    ;   true
+    ( Type = ExprType
+    ; error(["expression for", Id, "should be", Type, "but is", ExprType])
     ).
 
-type_check_stmt(condStmt(E, ST, SF, Loc), RetType, SurelyReturns, Cont, ContNext) :- !,
+type_check_stmt(condStmt(E, ST, SF, Loc), RetType, SurelyReturns, Cont, Cont) :- !,
     complain_on_fail("in if-statement", Loc),
     context_type_expr(Cont, Type, E),
-    (   Type \= boolean
-    ->  error,
-        write("'if' condition should evaluate to boolean but is "),
-        write(Type), nl,
-        fail
-    ;   true
+    ( Type = boolean
+    ; error(["'if' condition should evaluate to boolean but is", Type])
     ),
-    type_check_stmt(ST, RetType, SurelyReturnsTrue, Cont, ContTrue),
-    type_check_stmt(SF, RetType, SurelyReturnsFalse, Cont, ContFalse),
+    type_check_stmt(ST, RetType, SurelyReturnsTrue, Cont, _ContTrue),
+    type_check_stmt(SF, RetType, SurelyReturnsFalse, Cont, _ContFalse),
     (   evaluate_trivial(E, Val)
     ->  !,
         (   Val = true
-        ->  ContNext = ContTrue, SurelyReturns = SurelyReturnsTrue
-        ;   ContNext = ContFalse, SurelyReturns = SurelyReturnsFalse
+        ->  SurelyReturns = SurelyReturnsTrue
+        ;   SurelyReturns = SurelyReturnsFalse
         )
-    ;   ContNext = Cont,  % TODO(frdrc): things declared in unclear if-else fall out of scope. good or not?
-        SurelyReturns is SurelyReturnsTrue * SurelyReturnsFalse
+    ;   SurelyReturns is SurelyReturnsTrue * SurelyReturnsFalse
     ).
 
 type_check_stmt(whilStmt(E, S, Loc), RetType, SurelyReturns, Cont, ContNext) :- !,
     complain_on_fail("in while-statement", Loc),
     context_type_expr(Cont, Type, E),
-    (   Type \= boolean
-    ->  error,
-        write("'while' condition should evaluate to boolean but is "),
-        write(Type), nl,
-        fail
-    ;   true
+    ( Type = boolean
+    ; error(["'while' condition should evaluate to boolean but is", Type])
     ),
     type_check_stmt(S, RetType, SurelyReturnsLoop, Cont, ContLoop),
     (   evaluate_trivial(E, true)
@@ -146,24 +140,14 @@ type_check_stmt(whilStmt(E, S, Loc), RetType, SurelyReturns, Cont, ContNext) :- 
 
 type_check_stmt(rtrnStmt(Loc), RetType, 1, Cont, Cont) :- !,
     complain_on_fail("in return", Loc),
-    (   void = RetType
-    ->  true
-    ;   error,
-        write("should return '"), write(RetType),
-        write("' but tried to return 'void'"),
-        nl, fail
-    ).
+    complain_on_fail(["should return", RetType, "but tried to return 'void'"], Loc),
+    void = RetType.
 
 type_check_stmt(rtrnStmt(E, Loc), RetType, 1, Cont, Cont) :- !,
     complain_on_fail("in return", Loc),
     context_type_expr(Cont, Type, E),
-    (   Type = RetType
-    ->  true
-    ;   error,
-        write("should return '"), write(RetType),
-        write("' but tried to return '"), write(Type), write("'"),
-        nl, fail
-    ).
+    complain_on_fail(["should return", RetType, "but tried to return", Type], Loc),
+    Type = RetType.
 
 type_check_stmt(exprStmt(E, Loc), _RetType, 0, Cont, Cont) :- !,
     complain_on_fail("in expression", Loc),
@@ -183,13 +167,8 @@ context_add_items([ass(I, E)|Items], Type, Cont, ContFinal) :-
     !,
     context_insert(Cont, I, Type, ContNext),
     context_type_expr(ContNext, ExprType, E),
-    (   Type = ExprType
-    ->  !, true
-    ;   !, error,
-        write("expression for '"), write(I),
-        write("' should be '"), write(Type),
-        write("' but is '"), write(ExprType),
-        write("'"), nl, fail),
+    complain_on_fail(["expression for", I, "should be", Type, "but is", ExprType]),
+    Type = ExprType,
     context_add_items(Items, Type, ContNext, ContFinal).
 
 context_add_items([], _, Cont, Cont).
@@ -213,10 +192,9 @@ etc_(expr_ap(FuncId, Args), Type, Cont) :- !,
 etc_(Expr, Type, Cont) :-
     Expr =.. [Func|Args],
     etc_map_(Args, ArgTypes, Cont),
-    (   registered_functions(Func, _, Type, ArgTypes, Cont)
-    ->  !, true
-    ;   registered_functions(Func, FuncName, Type, FuncArgTypes, Cont),
-        args_match(FuncName, FuncArgTypes, ArgTypes)
+    ( registered_functions(Func, _, Type, ArgTypes, Cont), !
+    ; registered_functions(Func, FuncName, Type, FuncArgTypes, Cont),
+      args_match(FuncName, FuncArgTypes, ArgTypes)
     ).
 
 etc_map_([E|Es], [T|Ts], Cont) :-
@@ -236,7 +214,7 @@ get_declared_function(FuncId, RetType, ArgTypes) :-
     declared_function(FuncId, RetType, ArgTypes), !.
 
 get_declared_function(FuncId, _RetType, _ArgTypes) :-
-    error, write("function '"), write(FuncId), write("' not declared"), nl, fail.
+    error(["function '", FuncId, "' not declared"]).
 
 
 registered_functions(expr_in, "()", Alpha, [Alpha], _).
@@ -262,35 +240,22 @@ registered_functions(epls, "+", str, [str, str], _).
 registered_functions(emin, "-", int, [int, int], _).
 
 registered_functions(F, _, _, _) :-
-    error,
-    write("couldnt match type for function: "),
-    write(F), nl,
-    fail.
+    error(["couldnt match type for function:", F]).
 
 
 args_match(FuncName, As, Bs) :-
-    (   same_length(As, Bs)
-    ->  args_match_(As, Bs, 1, FuncName)
-    ;   error,
-        length(As, LA), length(Bs, LB),
-        write("function '"), write(FuncName), write("' expects "),
-        write(LA), write(" arguments but got "),
-        write(LB), nl,
-        fail
-    ).
+    length(As, An), length(Bs, Bn),
+    ( An = Bn, !
+    ; error(["function", FuncName, "expects", An, "arguments but got", Bn])
+    ),
+    args_match_(As, Bs, 1, FuncName).
 
 args_match_([], [], _N, _FuncName).
 args_match_([A|As], [B|Bs], N, FuncName) :-
+    complain_on_fail(["argument", N, "of", FuncName, "should be of type", A, "but got", B]),
+    A = B, !,
     N1 is N + 1,
-    (   A = B
-    ->  !, args_match_(As, Bs, N1, FuncName)
-    ;   error,
-        write("argument "), write(N),
-        write(" of "), write(FuncName),
-        write(" should be of type "), write(A),
-        write(" but got "), write(B), nl, fail
-    ).
-
+    args_match_(As, Bs, N1, FuncName).
 
 
 % === CONTEXTS ===
@@ -309,23 +274,18 @@ context_insert([Curr|Outers], Name, Type, [NewCurr|Outers]) :-
 context_get_type(Context, Name, Type) :-
     member(Map, Context),
     map_get_type(Map, Name, TypeFound), !,
-    (   Type = TypeFound
-    ->  true
-    ;   error,
-        write("wrong type: '"), write(Name),
-        write("' has type '"), write(TypeFound),
-        write("' but was assigned type '"), write(Type),
-        write("'"), nl, fail
+    ( Type = TypeFound, !
+    ; error(["wrong type:", Name, "has type", TypeFound, "but was assigned type", Type])
     ).
 
 context_get_type(_, _, _) :-
-    error, write("variable not declared"), nl, fail.
+    error("variable not declared").
 
 
 % map_insert(+Map, +Name, +Type, -NewMap)
 map_insert(Map, Name, _, _) :-
     map_get_type(Map, Name, _), !,
-    error, write("redeclaration of variable"), nl, fail.
+    error("redeclaration of variable").
 
 map_insert(Map, Name, Type, [(Name, Type)|Map]).
 
