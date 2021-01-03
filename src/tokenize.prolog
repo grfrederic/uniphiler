@@ -8,7 +8,7 @@
 
 
 tokenize(File, Tokens) :-
-    phrase_from_file(tokens(Tokens), File).
+    phrase_from_file(tokens(Tokens), File), !.
 
 
 tokens(Tokens) -->

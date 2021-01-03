@@ -2,12 +2,13 @@
 
 
 :- use_module('errors.prolog').
+:- use_module('context.prolog').
 :- use_module('simplify.prolog').
 
 
 all_checks(AST) :-
     check_all_args_different(AST),
-    check_typing_and_declarations(AST).
+    check_typing_and_declarations(AST), !.
 
 all_checks(_) :-
     error_stack_print,
@@ -91,11 +92,11 @@ type_check_stmt(blckStmt(Block), RetType, SurelyReturns, Cont, Cont) :- !,
 
 type_check_stmt(incrStmt(I, Loc), _RetType, 0, Cont, Cont) :- !,
     complain_on_fail([I, "should be of type 'int' in statement"], Loc),
-    context_get_type(Cont, I, int).
+    context_get(Cont, I, int).
 
 type_check_stmt(decrStmt(I, Loc), _RetType, 0, Cont, Cont) :- !,
     complain_on_fail([I, "should be of type 'int' in statement"], Loc),
-    context_get_type(Cont, I, int).
+    context_get(Cont, I, int).
 
 type_check_stmt(declStmt(Type, Items, Loc), _RetType, 0, Cont, ContNext) :- !,
     complain_on_fail("in declaration", Loc),
@@ -104,7 +105,7 @@ type_check_stmt(declStmt(Type, Items, Loc), _RetType, 0, Cont, ContNext) :- !,
 type_check_stmt(assgStmt(Id, Expr, Loc), _RetType, 0, Cont, Cont) :- !,
     complain_on_fail("in assignment", Loc),
     context_type_expr(Cont, ExprType, Expr),
-    context_get_type(Cont, Id, Type),
+    context_get(Cont, Id, Type),
     ( Type = ExprType
     ; error(["expression for", Id, "should be", Type, "but is", ExprType])
     ).
@@ -179,7 +180,7 @@ context_add_items([], _, Cont, Cont).
 context_type_expr(Cont, Type, Expr) :- etc_(Expr, Type, Cont).
 
 % for these don't check args
-etc_(expr_id(I), Type, Cont) :- !, context_get_type(Cont, I, Type).
+etc_(expr_id(I), Type, Cont) :- !, context_get(Cont, I, Type).
 etc_(expr_str(_), str, _) :- !.
 etc_(expr_int(_), int, _) :- !.
 etc_(expr_bool(_), boolean, _) :- !.
@@ -256,42 +257,6 @@ args_match_([A|As], [B|Bs], N, FuncName) :-
     A = B, !,
     N1 is N + 1,
     args_match_(As, Bs, N1, FuncName).
-
-
-% === CONTEXTS ===
-% context is a list variable-type mappings
-% head of context is the mapping of the current block
-% a variable type mapping is represented by [(name, type)]
-
-% subcontext(+Context, -SubContext)
-context_sub(Context, [[]|Context]).
-
-% context_insert(+Context, +Name, +Type, -NewContext)
-context_insert([Curr|Outers], Name, Type, [NewCurr|Outers]) :-
-    map_insert(Curr, Name, Type, NewCurr).
-
-% get_type_context(+Context, +Name, -Type)
-context_get_type(Context, Name, Type) :-
-    member(Map, Context),
-    map_get_type(Map, Name, TypeFound), !,
-    ( Type = TypeFound, !
-    ; error(["wrong type:", Name, "has type", TypeFound, "but was assigned type", Type])
-    ).
-
-context_get_type(_, _, _) :-
-    error("variable not declared").
-
-
-% map_insert(+Map, +Name, +Type, -NewMap)
-map_insert(Map, Name, _, _) :-
-    map_get_type(Map, Name, _), !,
-    error("redeclaration of variable").
-
-map_insert(Map, Name, Type, [(Name, Type)|Map]).
-
-% get_type_map(+Map, +Name, -Type)
-map_get_type([(Name, Type)|_], Name, Type) :- !.
-map_get_type([_|Map], Name, Type) :- map_get_type(Map, Name, Type).
 
 
 

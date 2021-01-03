@@ -9,7 +9,7 @@ main([SourceFile|_]) :-
     halt(0).
 
 main(_) :-
-    write("Usage:swipl -q -t halt show_ast.prolog [source file]"), nl,
+    write("Usage:swipl -q -t halt show_parse.prolog [source file]"), nl,
     halt(1).
 
 
