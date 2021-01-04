@@ -34,7 +34,7 @@ topDef(def(Id, RetType, Args, Body, _Loc)) -->
 function_context_init(Args, [Map]) :-
     maplist(arg_to_reg, Args, Map).
 
-arg_to_reg((Id, _Type), (Id, _Reg)).
+arg_to_reg((Id, Type), (Id, (Type, _FreshReg))).
 
 
 % === BLOCK ===
@@ -48,151 +48,178 @@ blck(blck([Stmt|Stmts], Loc), Cont, ContNext) -->
 
 % === STMT ===
 
-stmt(emptStmt, Cont, Cont) --> "".
+stmt(emptStmt, Cont, Cont) --> !, [].
 
-stmt(blckStmt(Block), Cont, ContNext) -->
+stmt(blckStmt(Block), Cont, ContNext) --> !,
     {context_sub(Cont, ContInner)},
     blck(Block, ContInner, [_|ContNext]).  % drop inner vars
 
 % IncrStmt / DecrStmt
-stmt(incrStmt(I, Loc), Cont, ContNext) -->
+stmt(incrStmt(I, Loc), Cont, ContNext) --> !,
     stmt(assgStmt(I, epls(expr_id(I), expr_int(1)), Loc), Cont, ContNext).
 
-stmt(decrStmt(I, Loc), Cont, ContNext) -->
+stmt(decrStmt(I, Loc), Cont, ContNext) --> !,
     stmt(assgStmt(I, emin(expr_id(I), expr_int(1)), Loc), Cont, ContNext).
 
 % DeclStmt
-stmt(declStmt(_Type, [], _Loc), Cont, Cont) --> [].
-stmt(declStmt(Type, [Item|Items], Loc), Cont, ContNext) -->
+stmt(declStmt(_Type, [], _Loc), Cont, Cont) --> !, [].
+stmt(declStmt(Type, [Item|Items], Loc), Cont, ContNext) --> !,
     item(Type, Item, Cont, ContStep),
     stmt(declStmt(Type, Items, Loc), ContStep, ContNext).
 
 % AssStmt
-stmt(assgStmt(I, E, _Loc), Cont, ContNext) -->
+stmt(assgStmt(I, E, _Loc), Cont, ContNext) --> !,
     expression(E, Cont, Out),
-    {context_update(Cont, I, Out, ContNext)}.
+    {t(E, Type), context_update(Cont, I, (Type, Out), ContNext)}.
 
 % RetStmt / VRetStmt
-stmt(rtrnStmt(E, _Loc), Cont, Cont) --> expression(E, Cont, Out), [return(Out)].
-stmt(rtrnStmt(_Loc), Cont, Cont) --> [return].
+stmt(rtrnStmt(E, _Loc), Cont, Cont) --> !, {t(E, Type)}, expression(E, Cont, Out), [return(Type, Out)].
+stmt(rtrnStmt(_Loc), Cont, Cont) --> !, [return].
 
 % if
-stmt(condStmt(_E, _ST, _SF, _Loc), Cont, Cont) --> [cond].
+stmt(condStmt(E, ST, SF, _Loc), Cont, ContNext) --> !,
+    expression(E, Cont, Out),
+    [br(Out, LabelTrue, LabelFalse)],
+    [label(LabelTrue)],
+    stmt(ST, Cont, ContTrue),
+    [br(LabelEnd)],
+    [label(LabelFalse)],
+    stmt(SF, Cont, ContFalse),
+    [label(LabelEnd)],
+    phi_cond(ContTrue, LabelTrue, ContFalse, LabelFalse, Cont, ContNext).
 
 % while
-stmt(whilStmt(_E, _S, _Loc), Cont, Cont) --> [while].
+stmt(whilStmt(_E, _S, _Loc), Cont, Cont) --> !, [while].
 
 % expr
-stmt(exprStmt(E, _Loc), Cont, Cont) --> expression(E, Cont, _Out).
+stmt(exprStmt(E, _Loc), Cont, Cont) --> !, expression(E, Cont, _Out).
+
+
+% === PHI CORRECTIONS FOR COND AND WHILE ===
+phi_cond([], _LT, [], _LF, [], []) --> !.
+phi_cond([MT|CT], LT, [MF|CF], LF, [M|C], [ME|CE]) -->
+    phi_cond_map(M, MT, LT, MF, LF, ME),
+    phi_cond(CT, LT, CF, LF, C, CE).
+
+phi_cond_map([], _MT, _LT, _MF, _LF, []) --> !, [].
+phi_cond_map([(Var, _)|M], MT, LT, MF, LF, [(Var, NewVal)|ME]) -->
+    { member((Var, VT), MT),
+      member((Var, VF), MF),
+      ! },
+    (   { VT == VF }
+    ->  { NewVal = VT }
+    ;   [phi(NewVal, [(VT, LT), (VF, LF)])]
+    ),
+    phi_cond_map(M, MT, LT, MF, LF, ME).
+
 
 
 % === INTRODUCING NEW VARS ===
 
-item(int, lit(I), Cont, ContNext) --> !, {context_insert(Cont, I, 0, ContNext)}.
-item(str, lit(I), Cont, ContNext) --> !, {context_insert(Cont, I, "", ContNext)}.
+item(int, lit(I), Cont, ContNext) --> !, {context_insert(Cont, I, (int, 0), ContNext)}.
+item(str, lit(I), Cont, ContNext) --> !, {context_insert(Cont, I, (str, ""), ContNext)}.
 item(_, lit(_), _, _) --> {error("initialization error")}.
 item(_, ass(I, E), Cont, ContNext) --> 
     expression(E, Cont, Out),
-    {context_insert(Cont, I, Out, ContNext)}.
+    {t(E, Type), context_insert(Cont, I, (Type, Out), ContNext)}.
 
 
 % === EXPRESSIONS ===
 
-expression(eor(E1, E2), Cont, Out) --> !,
+% built in compares
+expression(E, Cont, Out) -->
+    { E =.. [Op, Type, E1, E2],
+      cmp_llvm_icmp(Op, LlvmCond),
+      member(Type, [int, boolean]) },
+    !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, "or", [O1, O2])].
+    { LlvmLine =.. [icmp, Out, LlvmCond, Type, [O1, O2]] },
+    [LlvmLine].
 
-expression(eand(E1, E2), Cont, Out) --> !,
+% runtime compares
+expression(E, Cont, Out) -->
+    { E =.. [Op, str, E1, E2],
+      cmp_llvm_icmp(Op, _LlvmCond) },
+    !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, "and", [O1, O2])].
+    [call(Out, str, "freaky_string_comp_call", [O1, O2])].
 
-expression(ene(E1, E2), Cont, Out) --> !,
+% built in ops
+expression(E, Cont, Out) -->
+    { E =.. [Op, Type, E1, E2],
+      op_type_llvm_op(Op, Type, LlvmOp) },
+    !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, "ne", [O1, O2])].
+    { LlvmLine =.. [LlvmOp, Out, Type, [O1, O2]] },
+    [LlvmLine].
 
-expression(eeq(E1, E2), Cont, Out) --> !,
+% runtime ops
+expression(epls(str, E1, E2), Cont, Out) --> !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, "eq", [O1, O2])].
-
-expression(ele(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "ele", [O1, O2])].
-
-expression(ege(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "ege", [O1, O2])].
-
-expression(elt(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "slt", [O1, O2])].
-
-expression(egt(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "sgt", [O1, O2])].
-
-expression(emod(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "srem", [O1, O2])].
-
-expression(ediv(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "sdiv", [O1, O2])].
-
-expression(eprd(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "mul", [O1, O2])].
-
-expression(epls(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "add", [O1, O2])].
-
-expression(emin(E1, E2), Cont, Out) --> !,
-    expression(E1, Cont, O1),
-    expression(E2, Cont, O2),
-    [call(Out, "sub", [O1, O2])].
+    [call(Out, str, "some_weird_string_call", [O1, O2])].
 
 
-expression(enot(E), Cont, Out) --> !,
-    expression(eeq(expr_bool(false), E), Cont, Out).
+expression(enot(_Type, E), Cont, Out) --> !,
+    expression(eeq(expr_bool(boolean, false), E), Cont, Out).
 
-expression(eneg(E), Cont, Out) --> !,
-    expression(emin(expr_int(0), E), Cont, Out).
-
-
-expression(expr_int(I), _Cont, I) --> !.
-expression(expr_str(S), _Cont, S) --> !. % TODO(frdrc): some global stuff
-expression(expr_bool(B), _Cont, B) --> !.
+expression(eneg(Type, E), Cont, Out) --> !,
+    expression(emin(Type, expr_int(int, 0), E), Cont, Out).
 
 
-expression(expr_ap(I, Es), Cont, Out) --> !,
-    expressions(Es, Cont, Outs),
-    [call(Out, I, Outs)].
+expression(expr_int(_Type, I), _Cont, I) --> !.
+expression(expr_str(_Type, S), _Cont, S) --> !. % TODO(frdrc): some global stuff
+expression(expr_bool(_Type, B), _Cont, B) --> !.
 
-expression(expr_id(I), Cont, Out) --> !,
-    {context_get(Cont, I, Out)}.
 
-expression(expr_in(E), Cont, Out) --> !,
+expression(expr_ap(Type, I, Es), Cont, Out) --> !,
+    expressions_types_outs(Es, Cont, TypesOuts),
+    [call(Out, Type, I, TypesOuts)].
+
+expression(expr_id(Type, I), Cont, Out) --> !,
+    {context_get(Cont, I, (Type, Out))}.
+
+expression(expr_in(_Type, E), Cont, Out) --> !,
     expression(E, Cont, Out).
 
 
-expression(_E, _Cont, _Out) --> [some_computation].
+expression(_E, _Cont, _Out) --> [some_computation].  % TODO(frdrc): this should not be necessary
 
 
 % many at once with same context
 
-expressions([], _Cont, []) --> [].
-expressions([E|Es], Cont, [Out|Outs]) -->
+expressions_types_outs([], _Cont, []) --> [].
+expressions_types_outs([E|Es], Cont, [(Type, Out)|TypesOuts]) -->
     expression(E, Cont, Out),
-    expressions(Es, Cont, Outs).
+    { t(E, Type) },
+    expressions_types_outs(Es, Cont, TypesOuts).
+
+
+% === DISPATCH CMPS AND LLVM OPS ===
+
+% cmp_llvm_icmp(?Op, ?LlvmOp).
+cmp_llvm_icmp(eeq, eq).
+cmp_llvm_icmp(ene, ne).
+cmp_llvm_icmp(ele, sle).
+cmp_llvm_icmp(ege, sge).
+cmp_llvm_icmp(elt, slt).
+cmp_llvm_icmp(elt, sgt).
+
+
+% op_type_llvm_op(?Op, ?Type, ?LlvmOp).
+op_type_llvm_op(emod, int, srem).
+op_type_llvm_op(ediv, int, sdiv).
+op_type_llvm_op(eprd, int, mul).
+op_type_llvm_op(epls, int, add).
+op_type_llvm_op(emin, int, sub).
+op_type_llvm_op(eor, boolean, or).
+op_type_llvm_op(eand, boolean, and).
+
+
+% === UTILS ===
+
+% t(+Expr, ?Type)
+t(Expr, Type) :- Expr =.. [_, Type|_].

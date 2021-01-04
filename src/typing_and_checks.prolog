@@ -1,4 +1,4 @@
-:- module(checks, [all_checks/1]).
+:- module(typing_and_checks, [check_and_derive_types/1]).
 
 
 :- use_module('errors.prolog').
@@ -6,11 +6,11 @@
 :- use_module('simplify.prolog').
 
 
-all_checks(AST) :-
+check_and_derive_types(AST) :-
     check_all_args_different(AST),
     check_typing_and_declarations(AST), !.
 
-all_checks(_) :-
+check_and_derive_types(_) :-
     error_stack_print,
     error_stack_clear,
     fail.
@@ -180,18 +180,18 @@ context_add_items([], _, Cont, Cont).
 context_type_expr(Cont, Type, Expr) :- etc_(Expr, Type, Cont).
 
 % for these don't check args
-etc_(expr_id(I), Type, Cont) :- !, context_get(Cont, I, Type).
-etc_(expr_str(_), str, _) :- !.
-etc_(expr_int(_), int, _) :- !.
-etc_(expr_bool(_), boolean, _) :- !.
+etc_(expr_id(Type, I), Type, Cont) :- !, context_get(Cont, I, Type).
+etc_(expr_str(str, _), str, _) :- !.
+etc_(expr_int(int, _), int, _) :- !.
+etc_(expr_bool(boolean, _), boolean, _) :- !.
 
-etc_(expr_ap(FuncId, Args), Type, Cont) :- !,
+etc_(expr_ap(Type, FuncId, Args), Type, Cont) :- !,
     get_declared_function(FuncId, Type, FuncArgTypes),
     etc_map_(Args, ArgTypes, Cont),
     args_match(FuncId, FuncArgTypes, ArgTypes).
 
 etc_(Expr, Type, Cont) :-
-    Expr =.. [Func|Args],
+    Expr =.. [Func, Type|Args],
     etc_map_(Args, ArgTypes, Cont),
     ( registered_functions(Func, _, Type, ArgTypes, Cont), !
     ; registered_functions(Func, FuncName, Type, FuncArgTypes, Cont),

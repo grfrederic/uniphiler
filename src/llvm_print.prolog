@@ -17,24 +17,56 @@ arg_types(Args) --> sequence("(", arg_type, ", ", ")", Args).
 arg_type((_Id, Type)) --> type(Type).
 
 
-line(call(Out, Id, Args)) --> !,
-    indent, dumps(Out), " = call @", Id, sequence("(", argm, ", ", ")", Args).
+% LINE
 
-line(return(Out)) --> !,
-    indent, "return", sp, dumps(Out).
+line(call(Out, Type, Id, Args)) --> !,
+    indent, dumps(Out), " = call ", type(Type), " @", Id, sequence("(", argm_typed, ", ", ")", Args).
+
+line(return(Type, Out)) --> !,
+    indent, "return", sp, type(Type), sp, dumps(Out).
 
 line(return) --> !,
     indent, "return".
 
-line(X) --> indent,  dumps(X).
+line(label(Label)) --> !,
+    newline,
+    dumps(Label), ":".
+
+line(br(Label)) --> !,
+    indent, "br label ", label(Label).
+
+line(br(Cond, LabelTrue, LabelFalse)) --> !,
+    indent, "br i1 ", dumps(Cond), ", label ", label(LabelTrue), ", label ", label(LabelFalse).
+
+line(icmp(Out, LlvmCond, Type, Args)) --> !,
+    indent, dumps(Out), " = icmp ", dumps(LlvmCond), sp, type(Type), sp, sequence(argm, ", ", Args).
+
+line(phi((Type, Out), SrcLabels)) --> !,
+    indent, dumps(Out), " = phi ", type(Type), sp, phi_args(SrcLabels).
+
+% other builtins
+line(X) -->
+    { X =.. [Op, Out, Type, Args] }, !,
+    indent, dumps(Out), " = ", dumps(Op), sp, type(Type), sp, sequence(argm, ", ", Args).
 
 
+line(X) --> dumps(X).  % TODO(frdrc): this should not be necessary
+
+
+
+phi_args(SrcLabels) --> sequence(phi_arg, ", ", SrcLabels).
+phi_arg(((_Type, Src), Label)) --> "[ ", dumps(Src), ", ", label(Label), " ]".
+
+
+label(Name) --> "%", dumps(Name).
 funcName(Id) --> "@", Id.
-argm(X) --> dumps(X).
+
+argm(Src) --> dumps(Src).
+argm_typed((Type, Src)) --> type(Type), sp, dumps(Src).
 
 
 type(int) --> "i32".
-type(bool) --> "i1".
+type(boolean) --> "i1".
 type(str) --> "i8*".
 type(void) --> "void".
 

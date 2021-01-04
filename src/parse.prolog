@@ -5,7 +5,6 @@
 :- use_module(library(dcg/high_order)).
 
 :- use_module('tokenize.prolog').
-:- use_module('checks.prolog').
 :- use_module('errors.prolog').
 
 
@@ -140,8 +139,9 @@ type_(T) --> type(T).
 % TODO(frdrc): complex types
 
 
-
 % === EXPR ===
+% types will be derived later, for now we leave free variables
+
 expr(E) --> expr0(E).
 
 expr0(E) --> assocr(expr1, orop, E).
@@ -150,19 +150,18 @@ expr2(E) --> assocl(expr3, relop, E).
 expr3(E) --> assocl(expr4, addop, E).
 expr4(E) --> assocl(expr5, mulop, E).
 
-expr5(eneg(E)) --> o("-"), !, expr6(E).
-expr5(enot(E)) --> o("!"), !, expr6(E).
+expr5(eneg(_Type, E)) --> o("-"), !, expr6(E).
+expr5(enot(_Type, E)) --> o("!"), !, expr6(E).
 expr5(E) --> expr6(E).
 
 % just literals and variables
-expr6(expr_str(S)) --> [token(lit_str(S), _)], !.
-expr6(expr_int(I)) --> [token(lit_int(I), _)], !.
-expr6(expr_bool(B)) --> [token(lit_bool(B), _)], !.
+expr6(expr_str(str, S)) --> [token(lit_str(S), _)], !.
+expr6(expr_int(int, I)) --> [token(lit_int(I), _)], !.
+expr6(expr_bool(boolean, B)) --> [token(lit_bool(B), _)], !.
 
-expr6(expr_ap(I, Es)) --> id(I), s("("), !, sequence(expr, s(","), Es), s(")").
-expr6(expr_id(I)) --> id(I), !.
-expr6(expr_in(E)) --> s("("), !, expr(E), s(")").
-
+expr6(expr_ap(_Type, I, Es)) --> id(I), s("("), !, sequence(expr, s(","), Es), s(")").
+expr6(expr_id(_Type, I)) --> id(I), !.
+expr6(expr_in(_Type, E)) --> s("("), !, expr(E), s(")").
 
 
 % === OPS ===
@@ -228,11 +227,11 @@ opsepseq_([E|Es], [O|Os], El, Op) --> call(Op, O), call(El, E), !, opsepseq_(Es,
 opsepseq_([], [], _, _) --> [].
     
 
-% build expr
+% build expr, leave space for type
 laf(Os, [H|T], R) :- laf_(Os, H, T, R).
 laf_(_, A, [], A).
-laf_([O|Os], A, [H|T], R) :- NA =.. [O, A, H], laf_(Os, NA, T, R).
+laf_([O|Os], A, [H|T], R) :- NA =.. [O, _Type, A, H], laf_(Os, NA, T, R).
 
 raf(_, [E], E).
-raf([O], [E1, E2], R) :- R =.. [O, E1, E2].
-raf([O|Os], [H|T], R) :- raf(Os, T, RT), R =.. [O, H, RT].
+raf([O], [E1, E2], R) :- R =.. [O, _Type, E1, E2].
+raf([O|Os], [H|T], R) :- raf(Os, T, RT), R =.. [O, _Type, H, RT].

@@ -1,5 +1,5 @@
 :- use_module('parse.prolog').
-:- use_module('checks.prolog').
+:- use_module('typing_and_checks.prolog').
 
 
 :- initialization (main, main).
@@ -16,7 +16,7 @@ main(_) :-
 
 parse_and_check(SourceFile) :-
     parse(SourceFile, AST),
-    all_checks(AST),
+    check_and_derive_types(AST),
     writeln("OK").
 
 parse_and_check(_) :-

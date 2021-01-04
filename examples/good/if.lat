@@ -1,0 +1,12 @@
+int f(int x, int y) {
+    int z;
+    if (x > y)
+        z = x - 5;
+    else
+        z = y + 5;
+    return z;
+}
+
+int main() {
+    return 0;
+}
