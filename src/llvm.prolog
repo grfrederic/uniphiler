@@ -109,32 +109,48 @@ stmt(condStmt(E, _ST, SF, _Loc), Cont, ContNext) -->
 stmt(condStmt(E, ST, SF, _Loc), Cont, ContNext) --> !,
     expression(E, Cont, Out),
     [br(Out, LabelTrue, LabelFalse)],
+
+    % if true
     [label(LabelTrue)],
     stmt(ST, Cont, ContTrue),
+    [br(LabelTrueEnd), label(LabelTrueEnd)], % set ancestor for phi
     [br(LabelEnd)],
+
+    % if false
     [label(LabelFalse)],
     stmt(SF, Cont, ContFalse),
+    [br(LabelFalseEnd), label(LabelFalseEnd)], % set ancestor for phi
     [br(LabelEnd)],
+
+    % exit
     [label(LabelEnd)],
-    phi_merge(ContTrue, LabelTrue, ContFalse, LabelFalse, Cont, ContNext).
+    phi_merge(ContTrue, LabelTrueEnd, ContFalse, LabelFalseEnd, Cont, ContNext).
 
 % while
 stmt(whilStmt(E, Body, _Loc), Cont, ContShld) --> !,
     { shield_changing_vars(Body, Cont, ContShld),
       phrase(expression(E, ContShld, Out), LlvmCond), !,
       phrase(stmt(Body, ContShld, ContBody), LlvmBody), !,
-      phrase(phi_merge(Cont, LabelEntry, ContBody, LabelBody, Cont, ContShld), LlvmRephi), !
+      phrase(phi_merge(Cont, LabelEntry, ContBody, LabelBodyEnd, Cont, ContShld), LlvmRephi), !
     },
-    [br(LabelEntry)],
-    [label(LabelEntry)],
+    [br(LabelEntry), label(LabelEntry)],  % set ancestor for phi
     [br(LabelRephi)],
-    [label(LabelRephi)],
+
+    [label(LabelRephi)],  % for looping
+
+    % sync entry and loop
     LlvmRephi,
+    % check cond
     LlvmCond,
     [br(Out, LabelBody, LabelEnd)],
+
+    % body
     [label(LabelBody)],
     LlvmBody,
+    [br(LabelBodyEnd), label(LabelBodyEnd)],  % set ancestor for phi
     [br(LabelRephi)],
+
+    % exit
     [label(LabelEnd)].
 
 

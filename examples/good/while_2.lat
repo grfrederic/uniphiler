@@ -1,0 +1,17 @@
+void pairs(int n) {
+    int i = n;
+    while (i > 0) {
+        int j = n;
+        while (j > 0) {
+            printInt(i);
+            printInt(j);
+            j = j - 1;
+        }
+        i = i - 1;
+    }
+}
+
+int main() {
+    pairs(5);
+    return 0;
+}

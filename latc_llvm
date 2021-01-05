@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euo pipefail
+
+NONE='\033[00m'
+RED='\033[1;31m'
+PURPLE='\033[01;35m'
+
+ROOT_DIR=$(dirname "$(realpath $0)")
+
+# echo -e "Welcome to ${PURPLE}UNIPHILER${NONE}, the compiler you ${RED}love${NONE}!"
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 [SOURCE]"
+    exit 1
+fi
+
+SOURCE=$1
+OUT_PL="${SOURCE%.*}.prelink.ll"
+OUT_LL="${SOURCE%.*}.ll"
+OUT_BC="${SOURCE%.*}.bc"
+
+echo -e "Compiling: ${SOURCE}"
+swipl -q -t halt ${ROOT_DIR}/src/compile.prolog ${SOURCE} > ${OUT_PL}
+echo -e "Generated: ${OUT_PL}"
+
+echo -e "Linking: ${OUT_PL}"
+llvm-link ${OUT_PL} ${ROOT_DIR}/runtime/lib.ll -S > ${OUT_LL}
+echo -e "Generated: ${OUT_LL}"
+
+echo -e "Compiling: ${OUT_LL}"
+llvm-as ${OUT_LL}
+echo -e "Generated: ${OUT_BC}"
