@@ -21,14 +21,29 @@ compile_to_llvm(_, _) :-
     fail.
 
 
-program_llvm(AST) --> sequence(topDef, AST).
+program_llvm(AST) -->
+    { phrase(sequence(topDef, AST), Llvm),
+      split(Llvm, LlvmFuncs, LlvmConsts)
+    },
+    LlvmConsts, LlvmFuncs.
+
+
+% === MOVE GLOBALS TO TOP ===
+
+split(FuncWithConsts, Funcs, Consts) :-
+    maplist(split_func, FuncWithConsts, Funcs, ConstLists),
+    flatten(ConstLists, Consts).
+
+split_func(func(RetType, Id, Regs, LinesWithConsts),
+           func(RetType, Id, Regs, Lines),
+           Consts) :-
+    exclude(is_const, LinesWithConsts, Lines),
+    include(is_const, LinesWithConsts, Consts).
+
+is_const(constant(_, _, _)).
 
 
 % === TOP LEVEL DEF ===
-
-topDef(def(Id, RetType, Args, blck([], LocBlck), Loc)) --> !,
-    topDef(def(Id, RetType, Args, blck([rtrnStmt(_)], LocBlck), Loc)).
-
 topDef(def(Id, RetType, Args, Body, _Loc)) -->
     { function_context_and_regs_init(Args, Cont, Regs),
       phrase(blck_cut(Body, Cont, _ContNext), BodyLLVM) }, !,
@@ -110,7 +125,9 @@ stmt(whilStmt(E, Body, _Loc), Cont, ContShld) --> !,
       phrase(stmt(Body, ContShld, ContBody), LlvmBody), !,
       phrase(phi_merge(Cont, LabelEntry, ContBody, LabelBody, Cont, ContShld), LlvmRephi), !
     },
+    [br(LabelEntry)],
     [label(LabelEntry)],
+    [br(LabelRephi)],
     [label(LabelRephi)],
     LlvmRephi,
     LlvmCond,
@@ -195,7 +212,7 @@ expression(E, Cont, Out) -->
     !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, str, "freaky_string_comp_call", [(str, O1), (str, O2)])].
+    [call(Out, str, "compareStrings", [(str, O1), (str, O2)])].
 
 % built in ops
 expression(E, Cont, Out) -->
@@ -211,20 +228,27 @@ expression(E, Cont, Out) -->
 expression(epls(str, E1, E2), Cont, Out) --> !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, str, "some_weird_string_call", [(str, O1), (str, O2)])].
+    [call(Out, str, "concatStrings", [(str, O1), (str, O2)])].
 
 
 expression(enot(_Type, E), Cont, Out) --> !,
-    expression(eeq(expr_bool(boolean, false), E), Cont, Out).
+    expression(eeq(boolean, expr_bool(boolean, false), E), Cont, Out).
 
 expression(eneg(Type, E), Cont, Out) --> !,
     expression(emin(Type, expr_int(int, 0), E), Cont, Out).
 
 
 expression(expr_int(_Type, I), _Cont, I) --> !.
-expression(expr_str(_Type, S), _Cont, S) --> !. % TODO(frdrc): some global stuff
 expression(expr_bool(_Type, B), _Cont, B) --> !.
 
+
+expression(expr_str(_Type, S), _Cont, Out) --> !,
+    { string_length(S, N),
+      N1 is N + 1,
+      string_concat(S, "\\00", S00)
+    },
+    [constant(C, arr(N1, char), S00)],
+    [bitcast(Out, ptr(arr(N1, char)), C, str)].
 
 expression(expr_ap(Type, I, Es), Cont, Out) --> !,
     expressions_types_outs(Es, Cont, TypesOuts),
@@ -241,7 +265,7 @@ expression(expr_in(_Type, E), Cont, Out) --> !,
 
 
 % TODO(frdrc): this should not be necessary
-expression(E, _Cont, _Out) --> error(["could not compile expression", E]).
+expression(E, _Cont, _Out) --> { error(["could not compile expression", E]) }.
 
 
 % many at once with same context

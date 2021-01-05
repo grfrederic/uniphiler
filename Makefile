@@ -7,32 +7,20 @@ NC=\033[0m
 
 
 define INFO
-This Makefile is not used for anything, because the
-compiler is written in prolog and does not need to
-be compiled.
+This Makefile is just used for compiling the runtime.
 
 Please see README.md for more information.
 
 endef
 export INFO
 
-define STRAJK
- (                              )                      
- )\ )   )               )    ( /(       )           )  
-(()/(( /((      ) (  ( /(    )\())   ( /((    (  ( /(  
- /(_))\())(  ( /( )\ )\()) |((_)\ (  )\())\  ))\ )\()) 
-(_))(_))(()\ )(_)|(_|(_)\  |_ ((_))\((_)((_)/((_|_))/  
-/ __| |_ ((_|(_)_  !| |(_) | |/ /((_) |(_|_|_)) | |_   
-\__ \  _| '_/ _` || | / /    ' </ _ \ '_ \ / -_)|  _|  
-|___/\__|_| \__,_|/ |_\_\   _|\_\___/_.__/_\___| \__|  
-                |__/                                   
-endef
-export STRAJK
 
+compile_runtime:
+	clang -S -emit-llvm runtime/lib.c -o runtime/lib.ll
 
 all:
 	@echo -e "${GREEN}$$INFO${NC}"
-	@echo -e "${RED}$$STRAJK${NC}"
+	compile_runtime
 
 
 .PHONY: all

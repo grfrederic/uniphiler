@@ -45,8 +45,8 @@ maybe_token_(operator("+")) --> "+".
 maybe_token_(operator("*")) --> "*".
 maybe_token_(operator("/")) --> "/".
 maybe_token_(operator("%")) --> "%".
-maybe_token_(operator(">")) --> "<".
-maybe_token_(operator("<")) --> ">".
+maybe_token_(operator(">")) --> ">".
+maybe_token_(operator("<")) --> "<".
 maybe_token_(operator("=")) --> "=".
 maybe_token_(operator("!")) --> "!".
 

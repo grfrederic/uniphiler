@@ -5,13 +5,32 @@
 
 
 
-llvm_print(Llvm) --> sequence(func, newline, Llvm).
+llvm_print(Llvm) -->
+    { init_globals(Llvm) },
+    header,
+    sequence(topleveldef, newline, Llvm).
 
 
-func(func(Type, Id, Regs, Body)) -->
+header -->
+    "declare void @printInt(i32)", newline,
+    "declare i32 @readInt()", newline,
+    "declare void @printString(i8*)", newline,
+    "declare i8* @readString()", newline,
+    "declare i8* @concatStrings(i8*, i8*)", newline,
+    "declare i1 @compareStrings(i8*, i8*)", newline,
+    newline.
+
+topleveldef(constant(Out, Type, Value)) -->
+    src(Out), " = constant ", type(Type), sp, value(Value), newline.
+
+topleveldef(func(Type, Id, Regs, Body)) -->
     { init_func(Regs, Body) },
     "define", sp, type(Type), sp, funcName(Id), reg_types(Regs), sp, "{", newline,
-    sequence(line_cut, newline, Body),
+    sequence(line_cut, newline, Body), newline,
+    (   { Type = void }
+    ->  indent, "ret void", newline      % przepraszam
+    ;   indent, "unreachable", newline   % naprawdę
+    ),
     newline, "}", newline.
 
 reg_types(Regs) --> sequence("(", reg_type, ", ", ")", Regs).
@@ -46,6 +65,9 @@ line(br(Cond, LabelTrue, LabelFalse)) --> !,
 
 line(icmp(Out, LlvmCond, Type, Args)) --> !,
     indent, src(Out), " = icmp ", dumps(LlvmCond), sp, type(Type), sp, sequence(argm, ", ", Args).
+
+line(bitcast(Out, TypeIn, Castee, TypeOut)) --> !,
+    indent, src(Out), " = bitcast ", type(TypeIn), sp, src(Castee), " to ", type(TypeOut).
 
 line(phi((Type, Out), SrcLabels)) --> !,
     indent, src(Out), " = phi ", type(Type), sp, phi_args(SrcLabels).
@@ -87,7 +109,15 @@ type(X) --> type_(X), !.  % its simple lookup, dont create backtracking points
 type_(int) --> "i32".
 type_(boolean) --> "i1".
 type_(str) --> "i8*".
+type_(char) --> "i8".
 type_(void) --> "void".
+
+type_(ptr(T)) --> type_(T), "*".
+
+type_(arr(N, T)) --> "[", number(N), " x ", type(T), "]".
+
+
+value(X) --> {string(X)}, "c\"", X, "\"".
 
 
 
@@ -96,6 +126,16 @@ type_(void) --> "void".
 % with a dynamic predicate keeping track of the current variable iteration
 % during function generation.
 %
+
+init_globals(Llvm) :-
+    reset_reg_iter,
+    maplist(init_topleveldef, Llvm).
+
+
+init_topleveldef(constant(Out, _Type, _Value)) :-
+    init_glb(Out).
+
+init_topleveldef(func(_Type, _Id, _Regs, _Body)).
 
 
 init_func(TypeRegs, Body) :-
@@ -130,6 +170,10 @@ init_body([call(Out, _, _, _)|Body], false) :- !,
     init_reg(Out),
     init_body(Body, false).
 
+init_body([bitcast(Out, _, _, _)|Body], false) :- !,
+    init_reg(Out),
+    init_body(Body, false).
+
 init_body([icmp(Out, _, _, _)|Body], false) :- !,
     init_reg(Out),
     init_body(Body, false).
@@ -148,6 +192,11 @@ init_body([_|Body], false) :- !,
 
 init_body([], _).
 
+
+% init_glb(?O)
+% if the variable is free, bind it to a fresh number
+init_glb(O) :- nonvar(O), !.
+init_glb(O) :- var(O), get_reg_iter(N), string_concat("@", N, O).
 
 % init_reg(?O)
 % if the variable is free, bind it to a fresh number

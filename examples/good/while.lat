@@ -1,0 +1,14 @@
+int sumto(int n) {
+    int s = 0;
+    while (n > 0) {
+        s = s + n;
+        n = n - 1;
+    }
+    return s;
+}
+
+int main() {
+    printInt(sumto(5));
+    printInt(sumto(9));
+    return 0;
+}
