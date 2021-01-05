@@ -15,6 +15,4 @@ fi
 
 SOURCE=$1
 
-
-# echo -e "Checking: ${SOURCE}"
-swipl -q -t halt ${ROOT_DIR}/src/check_latte.prolog ${SOURCE}
+swipl -q -t halt ${ROOT_DIR}/src/compile.prolog ${SOURCE}

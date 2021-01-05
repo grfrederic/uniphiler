@@ -3,6 +3,7 @@
 :- use_module(library(dcg/basics)).
 :- use_module(library(dcg/high_order)).
 
+:- use_module('simplify.prolog').
 :- use_module('errors.prolog').
 :- use_module('context.prolog').
 :- use_module('llvm_print.prolog').
@@ -25,19 +26,24 @@ program_llvm(AST) --> sequence(topDef, AST).
 
 % === TOP LEVEL DEF ===
 
+topDef(def(Id, RetType, Args, blck([], LocBlck), Loc)) --> !,
+    topDef(def(Id, RetType, Args, blck([rtrnStmt(_)], LocBlck), Loc)).
+
 topDef(def(Id, RetType, Args, Body, _Loc)) -->
-    { function_context_init(Args, Cont),
-      phrase(blck(Body, Cont, _ContNext), BodyLLVM) },
-    [func(RetType, Id, Args, BodyLLVM)].
+    { function_context_and_regs_init(Args, Cont, Regs),
+      phrase(blck_cut(Body, Cont, _ContNext), BodyLLVM) }, !,
+    [func(RetType, Id, Regs, BodyLLVM)].
 
 
-function_context_init(Args, [Map]) :-
-    maplist(arg_to_reg, Args, Map).
+function_context_and_regs_init(Args, [Map], Regs) :-
+    maplist(arg_to_mapping_and_reg, Args, Map, Regs).
 
-arg_to_reg((Id, Type), (Id, (Type, _FreshReg))).
+arg_to_mapping_and_reg((Id, Type), (Id, (Type, FreshReg)), (Type, FreshReg)).
 
 
 % === BLOCK ===
+
+blck_cut(Body, Cont, ContNext) --> blck(Body, Cont, ContNext), !.
 
 blck(blck([], _Loc), Cont, Cont) --> [].
 
@@ -56,10 +62,10 @@ stmt(blckStmt(Block), Cont, ContNext) --> !,
 
 % IncrStmt / DecrStmt
 stmt(incrStmt(I, Loc), Cont, ContNext) --> !,
-    stmt(assgStmt(I, epls(expr_id(I), expr_int(1)), Loc), Cont, ContNext).
+    stmt(assgStmt(I, epls(int, expr_id(int, I), expr_int(int, 1)), Loc), Cont, ContNext).
 
 stmt(decrStmt(I, Loc), Cont, ContNext) --> !,
-    stmt(assgStmt(I, emin(expr_id(I), expr_int(1)), Loc), Cont, ContNext).
+    stmt(assgStmt(I, emin(int, expr_id(int, I), expr_int(int, 1)), Loc), Cont, ContNext).
 
 % DeclStmt
 stmt(declStmt(_Type, [], _Loc), Cont, Cont) --> !, [].
@@ -77,6 +83,14 @@ stmt(rtrnStmt(E, _Loc), Cont, Cont) --> !, {t(E, Type)}, expression(E, Cont, Out
 stmt(rtrnStmt(_Loc), Cont, Cont) --> !, [return].
 
 % if
+stmt(condStmt(E, ST, _SF, _Loc), Cont, ContNext) -->
+    { evaluate_trivial(E, true) }, !,
+    stmt(ST, Cont, ContNext).
+
+stmt(condStmt(E, _ST, SF, _Loc), Cont, ContNext) -->
+    { evaluate_trivial(E, false) }, !,
+    stmt(SF, Cont, ContNext).
+
 stmt(condStmt(E, ST, SF, _Loc), Cont, ContNext) --> !,
     expression(E, Cont, Out),
     [br(Out, LabelTrue, LabelFalse)],
@@ -85,32 +99,68 @@ stmt(condStmt(E, ST, SF, _Loc), Cont, ContNext) --> !,
     [br(LabelEnd)],
     [label(LabelFalse)],
     stmt(SF, Cont, ContFalse),
+    [br(LabelEnd)],
     [label(LabelEnd)],
-    phi_cond(ContTrue, LabelTrue, ContFalse, LabelFalse, Cont, ContNext).
+    phi_merge(ContTrue, LabelTrue, ContFalse, LabelFalse, Cont, ContNext).
 
 % while
-stmt(whilStmt(_E, _S, _Loc), Cont, Cont) --> !, [while].
+stmt(whilStmt(E, Body, _Loc), Cont, ContShld) --> !,
+    { shield_changing_vars(Body, Cont, ContShld),
+      phrase(expression(E, ContShld, Out), LlvmCond), !,
+      phrase(stmt(Body, ContShld, ContBody), LlvmBody), !,
+      phrase(phi_merge(Cont, LabelEntry, ContBody, LabelBody, Cont, ContShld), LlvmRephi), !
+    },
+    [label(LabelEntry)],
+    [label(LabelRephi)],
+    LlvmRephi,
+    LlvmCond,
+    [br(Out, LabelBody, LabelEnd)],
+    [label(LabelBody)],
+    LlvmBody,
+    [br(LabelRephi)],
+    [label(LabelEnd)].
+
 
 % expr
 stmt(exprStmt(E, _Loc), Cont, Cont) --> !, expression(E, Cont, _Out).
 
 
-% === PHI CORRECTIONS FOR COND AND WHILE ===
-phi_cond([], _LT, [], _LF, [], []) --> !.
-phi_cond([MT|CT], LT, [MF|CF], LF, [M|C], [ME|CE]) -->
-    phi_cond_map(M, MT, LT, MF, LF, ME),
-    phi_cond(CT, LT, CF, LF, C, CE).
+% === PHI CORRECTIONS FOR MERGING PATHS ===
 
-phi_cond_map([], _MT, _LT, _MF, _LF, []) --> !, [].
-phi_cond_map([(Var, _)|M], MT, LT, MF, LF, [(Var, NewVal)|ME]) -->
+phi_merge([], _LT, [], _LF, [], []) --> !.
+phi_merge([MT|CT], LT, [MF|CF], LF, [M|C], [ME|CE]) -->
+    phi_merge_map(M, MT, LT, MF, LF, ME),
+    phi_merge(CT, LT, CF, LF, C, CE).
+
+phi_merge_map([], _MT, _LT, _MF, _LF, []) --> !, [].
+phi_merge_map([(Var, (Type, _))|M], MT, LT, MF, LF, [(Var, (Type, NewVal))|ME]) -->
     { member((Var, VT), MT),
       member((Var, VF), MF),
       ! },
     (   { VT == VF }
-    ->  { NewVal = VT }
-    ;   [phi(NewVal, [(VT, LT), (VF, LF)])]
+    ->  { (Type, NewVal) = VT }
+    ;   [phi((Type, NewVal), [(VT, LT), (VF, LF)])]
     ),
-    phi_cond_map(M, MT, LT, MF, LF, ME).
+    phi_merge_map(M, MT, LT, MF, LF, ME).
+
+
+
+% === SHIELD CHANGING VARS ===
+shield_changing_vars(Body, Cont, ContShld) :-
+    phrase(stmt(Body, Cont, ContBody), _), !,
+    shield_changed(Cont, ContBody, ContShld).
+
+shield_changed(Cont, ContBody, ContShld) :-
+    maplist(shield_changed_map, Cont, ContBody, ContShld).
+
+shield_changed_map([], _, []) :- !.
+shield_changed_map([(Var, Val)|M], Chgd, [(Var, ShldVal)|Shld]) :- !,
+    member((Var, ChgdVal), Chgd), !,
+    (   Val == ChgdVal
+    ->  ShldVal = Val
+    ;   true
+    ),
+    shield_changed_map(M, Chgd, Shld).
 
 
 
@@ -128,7 +178,8 @@ item(_, ass(I, E), Cont, ContNext) -->
 
 % built in compares
 expression(E, Cont, Out) -->
-    { E =.. [Op, Type, E1, E2],
+    { E =.. [Op, _Type, E1, E2],
+      t(E1, Type),
       cmp_llvm_icmp(Op, LlvmCond),
       member(Type, [int, boolean]) },
     !,
@@ -144,7 +195,7 @@ expression(E, Cont, Out) -->
     !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, str, "freaky_string_comp_call", [O1, O2])].
+    [call(Out, str, "freaky_string_comp_call", [(str, O1), (str, O2)])].
 
 % built in ops
 expression(E, Cont, Out) -->
@@ -160,7 +211,7 @@ expression(E, Cont, Out) -->
 expression(epls(str, E1, E2), Cont, Out) --> !,
     expression(E1, Cont, O1),
     expression(E2, Cont, O2),
-    [call(Out, str, "some_weird_string_call", [O1, O2])].
+    [call(Out, str, "some_weird_string_call", [(str, O1), (str, O2)])].
 
 
 expression(enot(_Type, E), Cont, Out) --> !,
@@ -177,7 +228,10 @@ expression(expr_bool(_Type, B), _Cont, B) --> !.
 
 expression(expr_ap(Type, I, Es), Cont, Out) --> !,
     expressions_types_outs(Es, Cont, TypesOuts),
-    [call(Out, Type, I, TypesOuts)].
+    (   { Type = void }
+    ->  [call(Type, I, TypesOuts)]
+    ;   [call(Out, Type, I, TypesOuts)]
+    ).
 
 expression(expr_id(Type, I), Cont, Out) --> !,
     {context_get(Cont, I, (Type, Out))}.
@@ -186,7 +240,8 @@ expression(expr_in(_Type, E), Cont, Out) --> !,
     expression(E, Cont, Out).
 
 
-expression(_E, _Cont, _Out) --> [some_computation].  % TODO(frdrc): this should not be necessary
+% TODO(frdrc): this should not be necessary
+expression(E, _Cont, _Out) --> error(["could not compile expression", E]).
 
 
 % many at once with same context
@@ -206,7 +261,7 @@ cmp_llvm_icmp(ene, ne).
 cmp_llvm_icmp(ele, sle).
 cmp_llvm_icmp(ege, sge).
 cmp_llvm_icmp(elt, slt).
-cmp_llvm_icmp(elt, sgt).
+cmp_llvm_icmp(egt, sgt).
 
 
 % op_type_llvm_op(?Op, ?Type, ?LlvmOp).
