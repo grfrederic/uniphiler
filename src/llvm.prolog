@@ -224,6 +224,37 @@ expression(E, Cont, Out) -->
     { LlvmLine =.. [LlvmOp, Out, Type, [O1, O2]] },
     [LlvmLine].
 
+% binary ops
+expression(eor(boolean, E1, E2), Cont, Out) --> !,
+    expression(E1, Cont, O1),
+    [br(O1, LabelWin, LabelRetry)],
+    [label(LabelRetry)],
+    expression(E2, Cont, O2),
+    [br(O2, LabelWin, LabelFail)],
+    [label(LabelWin)],
+    [br(LabelFin)],
+    [label(LabelFail)],
+    [br(LabelFin)],
+    [label(LabelFin)],
+    [phi((boolean, Out), [((boolean, true), LabelWin),
+                          ((boolean, false), LabelFail)])].
+
+
+expression(eand(boolean, E1, E2), Cont, Out) --> !,
+    expression(E1, Cont, O1),
+    [br(O1, LabelHalf, LabelFail)],
+    [label(LabelHalf)],
+    expression(E2, Cont, O2),
+    [br(O2, LabelWin, LabelFail)],
+    [label(LabelWin)],
+    [br(LabelFin)],
+    [label(LabelFail)],
+    [br(LabelFin)],
+    [label(LabelFin)],
+    [phi((boolean, Out), [((boolean, true), LabelWin),
+                          ((boolean, false), LabelFail)])].
+
+
 % runtime ops
 expression(epls(str, E1, E2), Cont, Out) --> !,
     expression(E1, Cont, O1),
@@ -294,8 +325,6 @@ op_type_llvm_op(ediv, int, sdiv).
 op_type_llvm_op(eprd, int, mul).
 op_type_llvm_op(epls, int, add).
 op_type_llvm_op(emin, int, sub).
-op_type_llvm_op(eor, boolean, or).
-op_type_llvm_op(eand, boolean, and).
 
 
 % === UTILS ===

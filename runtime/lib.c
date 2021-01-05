@@ -19,14 +19,15 @@ void printString(char* s) {
 }
 
 char* readString() {
-    int n = 255;
+    size_t n = 255;
     char* s = (char*) malloc(n * sizeof(char));
     fgets(s, n, stdin);
+    s[strlen(s) - 1] = '\0';
     return s;
 }
 
 char* concatStrings(char* s1, char* s2) {
-    int n = strlen(s1) + strlen(s2);
+    size_t n = strlen(s1) + strlen(s2);
     char* s3 = (char*) malloc((n + 1) * sizeof(char));
     strcpy(s3, s1);
     strcat(s3, s2);

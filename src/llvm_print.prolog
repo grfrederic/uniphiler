@@ -36,7 +36,6 @@ topleveldef(func(Type, Id, Regs, Body)) -->
 reg_types(Regs) --> sequence("(", reg_type, ", ", ")", Regs).
 reg_type((Type, _Reg)) --> type(Type).
 
-
 % LINE
 
 line_cut(Line) --> line(Line), !.
