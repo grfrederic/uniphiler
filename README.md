@@ -3,27 +3,27 @@
 This is a compiler written in Prolog using DCG for the language Latte.
 
 
-#### Usage
+### Usage
 
-### Checking for errors
+#### Checking for errors
 
 ```
 > ./latc path/to/source.lat
 ```
 
-### Compiling
+#### Compiling
 
 ```
 > ./latc_llvm path/to/source.lat
 ```
 
-### Show Latte AST
+#### Show Latte AST
 
 ```
 > ./latc_ast path/to/source.lat
 ```
 
-### Show Latte tokens
+#### Show Latte tokens
 
 ```
 > ./latc_tokens path/to/source.lat
@@ -36,7 +36,7 @@ The executables are just wrappers for [swi-prolog](https://www.swi-prolog.org/) 
   * `latc_tokens` runs `src/show_tokens.prolog`
 
 
-#### Structure
+### Structure
 The main stages of compilation:
 
 1. Tokenization (`src/tokenize.prolog`)
