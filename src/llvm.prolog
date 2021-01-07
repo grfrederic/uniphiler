@@ -44,16 +44,24 @@ is_const(constant(_, _, _)).
 
 
 % === TOP LEVEL DEF ===
+
 topDef(def(Id, RetType, Args, Body, _Loc)) -->
     { function_context_and_regs_init(Args, Cont, Regs),
-      phrase(blck_cut(Body, Cont, _ContNext), BodyLLVM) }, !,
-    [func(RetType, Id, Regs, BodyLLVM)].
+      phrase(blck_cut(Body, Cont, _ContNext), BodyLlvm_),
+      add_terminator(RetType, BodyLlvm_, BodyLlvm) }, !,
+    [func(RetType, Id, Regs, BodyLlvm)].
 
 
 function_context_and_regs_init(Args, [Map], Regs) :-
     maplist(arg_to_mapping_and_reg, Args, Map, Regs).
 
 arg_to_mapping_and_reg((Id, Type), (Id, (Type, FreshReg)), (Type, FreshReg)).
+
+add_terminator(void, BodyLlvm_, BodyLlvm) :- !,
+    append(BodyLlvm_, [return], BodyLlvm).
+
+add_terminator(_Type, BodyLlvm_, BodyLlvm) :- !,
+    append(BodyLlvm_, [unreachable], BodyLlvm).
 
 
 % === BLOCK ===
@@ -138,10 +146,8 @@ stmt(whilStmt(E, Body, _Loc), Cont, ContShld) --> !,
 
     [label(LabelRephi)],  % for looping
 
-    % sync entry and loop
-    LlvmRephi,
-    % check cond
-    LlvmCond,
+    LlvmRephi,   % sync entry and loop
+    LlvmCond,    % check cond
     [br(Out, LabelBody, LabelEnd)],
 
     % body
@@ -179,6 +185,7 @@ phi_merge_map([(Var, (Type, _))|M], MT, LT, MF, LF, [(Var, (Type, NewVal))|ME]) 
 
 
 % === SHIELD CHANGING VARS ===
+
 shield_changing_vars(Body, Cont, ContShld) :-
     phrase(stmt(Body, Cont, ContBody), _), !,
     shield_changed(Cont, ContBody, ContShld).
@@ -194,7 +201,6 @@ shield_changed_map([(Var, Val)|M], Chgd, [(Var, ShldVal)|Shld]) :- !,
     ;   true
     ),
     shield_changed_map(M, Chgd, Shld).
-
 
 
 % === INTRODUCING NEW VARS ===
@@ -244,13 +250,14 @@ expression(E, Cont, Out) -->
 expression(eor(boolean, E1, E2), Cont, Out) --> !,
     expression(E1, Cont, O1),
     [br(O1, LabelWin, LabelRetry)],
+
     [label(LabelRetry)],
     expression(E2, Cont, O2),
     [br(O2, LabelWin, LabelFail)],
-    [label(LabelWin)],
-    [br(LabelFin)],
-    [label(LabelFail)],
-    [br(LabelFin)],
+
+    [label(LabelWin), br(LabelFin)],  % phi knows true
+    [label(LabelFail), br(LabelFin)], % phi knows false
+
     [label(LabelFin)],
     [phi((boolean, Out), [((boolean, true), LabelWin),
                           ((boolean, false), LabelFail)])].
@@ -259,13 +266,14 @@ expression(eor(boolean, E1, E2), Cont, Out) --> !,
 expression(eand(boolean, E1, E2), Cont, Out) --> !,
     expression(E1, Cont, O1),
     [br(O1, LabelHalf, LabelFail)],
+
     [label(LabelHalf)],
     expression(E2, Cont, O2),
     [br(O2, LabelWin, LabelFail)],
-    [label(LabelWin)],
-    [br(LabelFin)],
-    [label(LabelFail)],
-    [br(LabelFin)],
+
+    [label(LabelWin), br(LabelFin)],  % phi knows true
+    [label(LabelFail), br(LabelFin)], % phi knows false
+
     [label(LabelFin)],
     [phi((boolean, Out), [((boolean, true), LabelWin),
                           ((boolean, false), LabelFail)])].
@@ -297,6 +305,9 @@ expression(expr_str(_Type, S), _Cont, Out) --> !,
     [constant(C, arr(N1, char), S00)],
     [bitcast(Out, ptr(arr(N1, char)), C, str)].
 
+expression(expr_ap(void, "error", []), _Cont, _) --> !,
+    [call(void, "error", []), unreachable].
+
 expression(expr_ap(Type, I, Es), Cont, Out) --> !,
     expressions_types_outs(Es, Cont, TypesOuts),
     (   { Type = void }
@@ -310,8 +321,7 @@ expression(expr_id(Type, I), Cont, Out) --> !,
 expression(expr_in(_Type, E), Cont, Out) --> !,
     expression(E, Cont, Out).
 
-
-% TODO(frdrc): this should not be necessary
+% shouldnt happend, for debugging
 expression(E, _Cont, _Out) --> { error(["could not compile expression", E]) }.
 
 

@@ -4,6 +4,11 @@
 #include <stdbool.h>
 
 
+void error() {
+    printf("runtime error\n");
+    exit(1);
+}
+
 void printInt(int n) {
     printf("%d\n", n);
 }

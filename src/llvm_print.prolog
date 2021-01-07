@@ -18,6 +18,7 @@ header -->
     "declare i8* @readString()", newline,
     "declare i8* @concatStrings(i8*, i8*)", newline,
     "declare i1 @compareStrings(i8*, i8*)", newline,
+    "declare void @error()", newline,
     newline.
 
 topleveldef(constant(Out, Type, Value)) -->
@@ -27,10 +28,6 @@ topleveldef(func(Type, Id, Regs, Body)) -->
     { init_func(Regs, Body) },
     "define", sp, type(Type), sp, funcName(Id), reg_types(Regs), sp, "{", newline,
     sequence(line_cut, newline, Body), newline,
-    (   { Type = void }
-    ->  indent, "ret void", newline      % przepraszam
-    ;   indent, "unreachable", newline   % naprawdę
-    ),
     newline, "}", newline.
 
 reg_types(Regs) --> sequence("(", reg_type, ", ", ")", Regs).
@@ -70,6 +67,9 @@ line(bitcast(Out, TypeIn, Castee, TypeOut)) --> !,
 
 line(phi((Type, Out), SrcLabels)) --> !,
     indent, src(Out), " = phi ", type(Type), sp, phi_args(SrcLabels).
+
+line(unreachable) --> !,
+    indent, "unreachable".
 
 % other builtins
 line(X) -->

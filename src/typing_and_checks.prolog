@@ -210,6 +210,7 @@ get_declared_function("readInt", int, []) :- !.
 get_declared_function("readString", str, []) :- !.
 get_declared_function("printInt", void, [int]) :- !.
 get_declared_function("printString", void, [str]) :- !.
+get_declared_function("error", void, []) :- !.
 
 get_declared_function(FuncId, RetType, ArgTypes) :-
     declared_function(FuncId, RetType, ArgTypes), !.

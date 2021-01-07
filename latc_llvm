@@ -7,7 +7,7 @@ PURPLE='\033[01;35m'
 
 ROOT_DIR=$(dirname "$(realpath $0)")
 
-# echo -e "Welcome to ${PURPLE}UNIPHILER${NONE}, the compiler you ${RED}love${NONE}!"
+echo -e "Welcome to ${PURPLE}UNIPHILER${NONE}, the compiler you ${RED}love${NONE}!"
 
 if [ "$#" -ne 1 ]; then
     echo "Usage: $0 [SOURCE]"
