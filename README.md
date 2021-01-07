@@ -7,15 +7,19 @@ This is a compiler written in Prolog using DCG for the language Latte.
 
 #### Checking for errors
 
+Running
 ```
 > ./latc path/to/source.lat
 ```
+will return "OK" for accepted programs and "ERROR" with additional errors for all others.
 
 #### Compiling
 
+For programs accepted by `latc`, running
 ```
 > ./latc_llvm path/to/source.lat
 ```
+will produce `path/to/source.ll` and `path/to/source.bc`.
 
 #### Show Latte AST
 
