@@ -5,21 +5,21 @@ This is a compiler written in Prolog using DCG for the language Latte.
 
 ### Usage
 
-#### Checking for errors
+#### Compiling
 
 Running
 ```
-> ./latc path/to/source.lat
-```
-will return "OK" for accepted programs and "ERROR" with additional errors for all others.
-
-#### Compiling
-
-For programs accepted by `latc`, running
-```
 > ./latc_llvm path/to/source.lat
 ```
-will produce `path/to/source.ll` and `path/to/source.bc`.
+for correct programs will produce `path/to/source.prelink.ll`, `path/to/source.ll` and `path/to/source.bc`.
+
+#### Just checking for errors
+
+Running
+```
+> ./latc_check path/to/source.lat
+```
+will return "OK" for accepted programs and "ERROR" with additional errors for all others.
 
 #### Show Latte AST
 

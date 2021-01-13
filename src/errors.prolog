@@ -37,11 +37,11 @@ error_stack_push(Msg) :-
 
 
 error_stack_print :-
-    writeln("ERROR"),
+    writeln(user_error, "ERROR"),
     error_stack_print_.
 
 error_stack_print_ :-
-    error_stack(Msg), writeln(Msg), fail.
+    error_stack(Msg), writeln(user_error, Msg), fail.
 
 error_stack_print_.
 

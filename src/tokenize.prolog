@@ -67,7 +67,7 @@ maybe_token_(T) --> clot([C|Cs], csym), {char_type(C, csymf), string_codes(S, [C
 
 % stop and error
 maybe_token_(_) --> eos, !, {fail}.
-maybe_token_(_) --> error("failed to parse token").
+maybe_token_(_) --> { error("failed to parse token") }.
 
 
 % dispatch strings

@@ -16,7 +16,7 @@ export INFO
 
 
 compile_runtime:
-	clang -S -emit-llvm runtime/lib.c -o runtime/lib.ll
+	clang -S -emit-llvm -O3 runtime/lib.c -o runtime/lib.ll
 
 all:
 	@echo -e "${GREEN}$$INFO${NC}"
