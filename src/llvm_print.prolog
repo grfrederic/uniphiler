@@ -51,7 +51,7 @@ line(return) --> !,
 
 line(label(Label)) --> !,
     newline,
-    label_set(Label), ":".
+    label_set(Label).
 
 line(br(Label)) --> !,
     indent, "br label ", label_ref(Label).
@@ -84,7 +84,7 @@ phi_args(SrcLabels) --> sequence(phi_arg, ", ", SrcLabels).
 phi_arg(((_Type, Src), Label)) --> "[ ", src(Src), ", ", label_ref(Label), " ]".
 
 
-label_set(Label) --> Label.
+label_set(Label) --> "; <label>:", Label.
 label_ref(Label) --> "%", Label.
 
 
