@@ -1,0 +1,20 @@
+int f() {
+    int z;
+    int x = 3;
+    int w = x + 3;
+
+    if (x > 0) {
+        z = x + 3;
+        printString("ok!");
+    } else {
+        z = x + 3;
+        printString("not ok!");
+    }
+
+    return z;
+}
+
+
+int main() {
+    return 0;
+}

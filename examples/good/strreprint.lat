@@ -1,0 +1,6 @@
+int main() {
+    printString("ala");
+    printString("i");
+    printString("ala");
+    return 0;
+}

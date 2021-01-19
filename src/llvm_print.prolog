@@ -59,12 +59,11 @@ line(return(Type, Out)) --> !,
 line(return) --> !,
     indent, "ret void".
 
-line(label(Label)) --> !,
-    newline,
-    label_set(Label).
-
 line(br(Label)) --> !,
-    indent, "br label ", label_ref(Label).
+    (   { var(Label) }
+    ->  line(unreachable)  % means that block was removed in opt
+    ;   indent, "br label ", label_ref(Label)
+    ).
 
 line(br(Cond, LabelTrue, LabelFalse)) --> !,
     indent, "br i1 ", src(Cond), ", label ", label_ref(LabelTrue), ", label ", label_ref(LabelFalse).

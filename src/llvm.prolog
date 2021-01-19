@@ -7,11 +7,13 @@
 :- use_module('errors.prolog').
 :- use_module('context.prolog').
 :- use_module('llvm_print.prolog').
+:- use_module('llvm_opts.prolog').
 
 
 compile_to_llvm(AST, LlvmStr) :-
     phrase(program_llvm(AST), Llvm), !,
-    phrase(llvm_print(Llvm), LlvmCodes), !,
+    llvm_opts(Llvm, LlvmOptd), !,
+    phrase(llvm_print(LlvmOptd), LlvmCodes), !,
     string_codes(LlvmStr, LlvmCodes).
 
 

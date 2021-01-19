@@ -1,0 +1,4 @@
+int main() {
+    string x = "asdf" + "asdf";
+    return 0;
+}
