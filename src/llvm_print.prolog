@@ -24,14 +24,24 @@ header -->
 topleveldef(constant(Out, Type, Value)) -->
     src(Out), " = constant ", type(Type), sp, value(Value), newline.
 
-topleveldef(func(Type, Id, Regs, Body)) -->
-    { init_func(Regs, Body) },
+topleveldef(func(Type, Id, Regs, LlvmBlocks)) -->
+    { init_func(Regs, LlvmBlocks) },
     "define", sp, type(Type), sp, funcName(Id), reg_types(Regs), sp, "{", newline,
-    sequence(line_cut, newline, Body), newline,
+    sequence(blck, newline, LlvmBlocks), newline,
     newline, "}", newline.
 
 reg_types(Regs) --> sequence("(", reg_type, ", ", ")", Regs).
 reg_type((Type, _Reg)) --> type(Type).
+
+
+% BLOCK
+
+blck(llvmBlock(Label, LlvmLines)) -->
+    newline,
+    label_set(Label),
+    newline,
+    sequence(line_cut, newline, LlvmLines).
+
 
 % LINE
 
@@ -131,65 +141,35 @@ init_globals(Llvm) :-
     maplist(init_topleveldef, Llvm).
 
 
-init_topleveldef(constant(Out, _Type, _Value)) :-
+init_topleveldef(func(_Type, _Id, _Regs, _Body)) :- !.
+init_topleveldef(constant(Out, _Type, _Value)) :- !,
     init_glb(Out).
 
-init_topleveldef(func(_Type, _Id, _Regs, _Body)).
 
-
-init_func(TypeRegs, Body) :-
+init_func(TypeRegs, LlvmBlocks) :-
     reset_reg_iter,
     maplist(init_type_reg, TypeRegs),
-    init_body(Body, true).
+    maplist(init_block, LlvmBlocks).
 
 
 init_type_reg((_Type, Reg)) :- init_reg(Reg).
 
 
-% init_body(+Body, +NeedToStartNewBlock)
-init_body([label(Label)|Body], true) :- !,
+init_block(llvmBlock(Label, LlvmLines)) :-
     init_label(Label),
-    init_body(Body, false).
+    maplist(init_line, LlvmLines).
 
-init_body([label(Label)|Body], false) :- !,
-    init_label(Label),
-    init_body(Body, false).
 
-init_body([return|Body], _) :- !,
-    init_body(Body, true).
+init_line(call(Out, _, _, _)) :- !, init_reg(Out).
+init_line(bitcast(Out, _, _, _)) :- !, init_reg(Out).
+init_line(icmp(Out, _, _, _)) :- !, init_reg(Out).
+init_line(phi((_, Out), _)) :- !, init_reg(Out).
 
-init_body([return(_, _)|Body], _) :- !,
-    init_body(Body, true).
-
-init_body(Body, true) :- !,
-    init_label(_),  % for javanissen
-    init_body(Body, false).
-
-init_body([call(Out, _, _, _)|Body], false) :- !,
-    init_reg(Out),
-    init_body(Body, false).
-
-init_body([bitcast(Out, _, _, _)|Body], false) :- !,
-    init_reg(Out),
-    init_body(Body, false).
-
-init_body([icmp(Out, _, _, _)|Body], false) :- !,
-    init_reg(Out),
-    init_body(Body, false).
-
-init_body([phi((_, Out), _)|Body], false) :- !,
-    init_reg(Out),
-    init_body(Body, false).
-
-init_body([Line|Body], false) :-
+init_line(Line) :-
     Line =.. [_Op, Out, _Type, _Args], !,
-    init_reg(Out),
-    init_body(Body, false).
+    init_reg(Out).
 
-init_body([_|Body], false) :- !,
-    init_body(Body, false).
-
-init_body([], _).
+init_line(_) :- !.  % ignore rest
 
 
 % init_glb(?O)
