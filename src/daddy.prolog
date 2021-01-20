@@ -8,8 +8,6 @@ compute_daddies(Graph, AllDaddies) :-
 
 daddies_loop(Graph, AllDs, AllDsOut) :-
     daddies_step(Graph, AllDs, AllDsNext), !,
-    % writeln("------------"),
-    % maplist(writeln, AllDs),
     (   AllDs == AllDsNext
     ->  AllDsOut = AllDsNext, !
     ;   daddies_loop(Graph, AllDsNext, AllDsOut)
@@ -21,8 +19,8 @@ daddies_step(Graph, AllDs, AllDsNext) :-
 
 daddies_step_row(AllDs, (Label, Ins), (Label, DsNext)) :-
     maplist(get_ds(AllDs), Ins, InDs),
-    inter_hard(InDs, DsNextRest),
-    add_hard(Label, DsNextRest, DsNext).
+    hard_inter(InDs, DsNextRest),
+    hard_add(Label, DsNextRest, DsNext).
 
 
 init_daddies(Graph, AllDs) :-
@@ -41,25 +39,25 @@ get_ds([(L1, Ds)|_], L2, Ds) :- L1 == L2, !.
 get_ds([_|AllDs], L, Ds) :- get_ds(AllDs, L, Ds).
 
 
-add_hard(X, L, L) :- member_hard(X, L), !.
-add_hard(X, L, [X|L]) :- !.
+hard_add(X, L, L) :- hard_member(X, L), !.
+hard_add(X, L, [X|L]) :- !.
 
 
-inter_hard([], []) :- !.
-inter_hard([V], V) :- !.
-inter_hard([V|Vs], I) :- foldl(is2_, Vs, V, I).
+hard_inter([], []) :- !.
+hard_inter([V], V) :- !.
+hard_inter([V|Vs], I) :- foldl(is2_, Vs, V, I).
 
 is2_([], _, []).
 is2_([H|T], V, M) :-
-    (   member_hard(H, V)
+    (   hard_member(H, V)
     ->  M = [H|M1], is2_(T, V, M1)
     ;   is2_(T, V, M)
     ).
 
 
 % hard_member(+X, +L).
-member_hard(X, [Y|_]) :- X == Y, !.
-member_hard(X, [_|L]) :- member_hard(X, L).
+hard_member(X, [Y|_]) :- X == Y, !.
+hard_member(X, [_|L]) :- hard_member(X, L).
 
 
 nodes(Graph, Nodes) :-
