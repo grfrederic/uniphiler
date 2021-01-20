@@ -1,0 +1,14 @@
+void f(boolean b) {
+
+    if (b) {
+        printString("ok!");
+    } else {
+        printString("not ok!");
+    }
+
+}
+
+
+int main() {
+    return 0;
+}

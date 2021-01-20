@@ -1,5 +1,7 @@
 :- module(llvm_opts, [llvm_opts/2]).
 
+:- use_module('daddy.prolog').
+
 
 llvm_opts(Llvm, LlvmOptd) :-
     include(const, Llvm, ConstantDecls),
@@ -42,79 +44,98 @@ gcse(LlvmBlocks, LlvmBlocksOptd) :-
 init_gcse_tab(LlvmBlocks, LlvmBlocksOptd, GcseTab) :-
     maplist(init_gcse_row, LlvmBlocks, LlvmBlocksOptd, GcseTab).
 
-init_gcse_row(Block, BlockOptd, (Block, _Ins, _Outs, BlockOptd, _Mem)).
+init_gcse_row(Block, BlockOptd, (Block, (_Is, _Os, _Ds), BlockOptd, _Mem)).
 
 
 run_gcse_tab(GcseTab) :-
     maplist(get_label, GcseTab, Labels),
-    maplist(compute_outs, GcseTab),
-    maplist(compute_ins(GcseTab), GcseTab),
+    compute_connections(GcseTab),
     maplist(compute_opts(GcseTab), Labels).
 
 
-% compute outs
+% compute daddy dominators
 
-compute_outs((llvmBlock(_Label, Lines), _, Outs, _, _)) :-
+compute_connections(GcseTab) :-
+    maplist(compute_outs, GcseTab),
+    maplist(compute_ins(GcseTab), GcseTab),
+    compute_daddies(GcseTab).
+
+compute_outs((llvmBlock(_Label, Lines), (_, Os, _), _, _)) :-
     append(_, [br(Out)], Lines), !,
-    Outs = [Out].
+    Os = [Out].
 
-compute_outs((llvmBlock(_Label, Lines), _, Outs, _, _)) :-
+compute_outs((llvmBlock(_Label, Lines), (_, Os, _), _, _)) :-
     append(_, [br(_, Out1, Out2)], Lines), !,
-    Outs = [Out1, Out2].
+    Os = [Out1, Out2].
 
-compute_outs((_, _, [], _, _)) :- !.
+compute_outs((_, (_, [], _), _, _)) :- !.
 
 
-% compute ins
-compute_ins(GcseTab, (llvmBlock(Label, _Lines), Ins, _, _, _)) :-
-    include(in_outs(Label), GcseTab, InRows_),
-    exclude(has_label_hard(Label), InRows_, InRows),  % exclude self
-    maplist(get_label, InRows, Ins).
+compute_ins(GcseTab, (llvmBlock(Label, _Lines), (Is, _, _), _, _)) :-
+    include(in_outs(Label), GcseTab, InRows),
+    maplist(get_label, InRows, Is).
+
+
+compute_daddies(GcseTab) :-
+    prep(GcseTab, Graph, AllDaddies),
+    compute_daddies(Graph, AllDaddies).
+
+
+prep(GcseTab, Graph, AllDaddies) :-
+    maplist(prep_, GcseTab, Graph, AllDaddies).
+
+prep_((llvmBlock(Label, _), (Is, _, Ds), _, _), (Label, Is), (Label, Ds)).
+
 
 
 % compute opts
+
 compute_opts(GcseTab, Label) :-
-    get_row(Label, GcseTab, (_, _, _, BlckOpt, _)),
+    get_row(Label, GcseTab, (_, _, BlckOpt, _)),
     nonvar(BlckOpt),
     !.
 
 compute_opts(GcseTab, Label) :-
-    get_row(Label, GcseTab, (Blck, Ins, _, BlckOpt, MemOut)),
-    BlckOpt = llvmBlock(_, _),  % lock to avoid loops
-    maplist(compute_opts(GcseTab), Ins),
-    maplist(get_mem(GcseTab), Ins, MemsOrLoops),
-    exclude(var, MemsOrLoops, Mems),
-    merge_mems(Mems, MemIn),
-    run_opt(Blck, BlckOpt, MemIn, MemOut).
-
+    get_row(Label, GcseTab, (Blck, (_, _, Ds), BlckOpt, MemNew)),
+    hard_drop(Label, Ds, DsNoSelf),
+    maplist(compute_opts(GcseTab), DsNoSelf),
+    maplist(get_mem(GcseTab), DsNoSelf, Mems),
+    union_mems(Mems, Mem),
+    run_opt(Blck, BlckOpt, Mem, MemNew).
 
 % run opt for block
-run_opt(llvmBlock(Label, Lines), llvmBlock(Label, LinesOptd), Mem, MemOut) :-
-    ro_(Lines, LinesOptd, Mem, MemOut).
-
+run_opt(llvmBlock(Label, Lines), llvmBlock(Label, LinesOptd), Mem, MemNew) :-
+    ro_(Lines, LinesOptd, Mem, MemNew).
 
 % we can ignore phis that merge the same register
-ro_([phi((_, V1), [((_, V1), _), ((_, V2), _)])|Ls], Los, Mem, MemOut) :-
-    V1 == V2,
-    ro_(Ls, Los, Mem, MemOut).
+ro_([phi((_, V1), [((_, V1), _), ((_, V2), _)])|Ls], Los, Mem, MemNew) :-
+    V1 == V2, !,
+    ro_(Ls, Los, Mem, MemNew).
+
+% ... or phis that merge a register on itself
+ro_([phi((_, V0), [((_, V1), _), ((_, V2), _)])|Ls], Los, Mem, MemNew) :-
+    (V0 == V1; V0 == V2), !,
+    ro_(Ls, Los, Mem, MemNew).
 
 
 % reuse already computed stuff
-ro_([L|Ls], Los, Mem, MemOut) :-
+ro_([L|Ls], Los, Mem, MemNew) :-
     (   not_memorable(L), !
-    ->  Los = [L|LosRest], ro_(Ls, LosRest, Mem, MemOut)
+    ->  Los = [L|LosRest], ro_(Ls, LosRest, Mem, MemNew)
     ;   (   in_memory(L, Mem)
-        ->  ro_(Ls, Los, Mem, MemOut)
-        ;   Los = [L|LosRest], ro_(Ls, LosRest, [L|Mem], MemOut)
+        ->  ro_(Ls, Los, Mem, MemNew)
+        ;   Los = [L|LosRest],
+            MemNew = [L|MemNewRest],
+            ro_(Ls, LosRest, [L|Mem], MemNewRest)
         )
     ).
 
-ro_([], [], Mem, Mem) :- !.
+ro_([], [], _Mem, []) :- !.
 
 
 % memory utils
 
-% can be
+% dont use for gcse
 not_memorable(unreachable).
 not_memorable(return).
 not_memorable(return(_, _)).
@@ -143,33 +164,32 @@ match_memory(L1, L2) :-
     Out1 = Out2.
 
 
-merge_mems([], []) :- !.
-merge_mems([M|Ms], Mrg) :- !,
-    mm_(M, Ms, Mrg).
+union_mems(Ms, U) :- foldl(um2_, Ms, [], U).
 
-mm_([L|M], Ms, [L|Mrg]) :-
-    maplist(hard_member(L), Ms), !,
-    mm_(M, Ms, Mrg).
+um2_([L|M1], M2, U) :-
+    hard_member(L, M2), !,
+    um2_(M1, M2, U).
 
-mm_([_|M], Ms, Mrg) :- !,
-    mm_(M, Ms, Mrg).
+um2_([L|M1], M2, [L|U]) :-
+    um2_(M1, M2, U).
 
-mm_([], _, []) :- !.
+um2_([], M2, M2) :- !.
+
 
 
 % gcse tab utils
-in_outs(Label, (_, _, Outs, _, _)) :- hard_member(Label, Outs).
+in_outs(Label, (_, (_, Os, _), _, _)) :- hard_member(Label, Os).
 
-has_label_hard(Label, (llvmBlock(LabelBlock, _Lines), _, _, _, _)) :-
+has_label_hard(Label, (llvmBlock(LabelBlock, _Lines), _, _, _)) :-
     Label == LabelBlock.
 
-get_label((llvmBlock(Label, _Lines), _, _, _, _), Label).
+get_label((llvmBlock(Label, _Lines), _, _, _), Label).
 
 get_row(Label, GcseTab, Row) :-
     include(has_label_hard(Label), GcseTab, [Row]).
 
 get_mem(GcseTab, Label, Mem) :-
-    include(has_label_hard(Label), GcseTab, [(_, _, _, _, Mem)]).
+    include(has_label_hard(Label), GcseTab, [(_, _, _, Mem)]).
 
 
 % === UTILS ===
@@ -178,3 +198,9 @@ get_mem(GcseTab, Label, Mem) :-
 % hard_member(+X, +L).
 hard_member(X, [Y|_]) :- X == Y.
 hard_member(X, [_|L]) :- hard_member(X, L).
+
+
+% hard_drop(+X, +L1, +L2).
+hard_drop(X, [Y|L1], L2) :- X == Y, !, hard_drop(X, L1, L2).
+hard_drop(X, [Y|L1], [Y|L2]) :- hard_drop(X, L1, L2).
+hard_drop(_, [], []).

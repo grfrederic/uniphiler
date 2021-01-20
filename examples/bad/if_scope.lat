@@ -1,10 +1,12 @@
-int main() {
-    boolean b;
-
+int f(boolean b) {
     if (b)
         int x = 3;
     else
         int x = 5;
 
     return x;
+}
+
+int main() {
+    return 0;
 }

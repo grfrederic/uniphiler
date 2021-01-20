@@ -1,0 +1,14 @@
+int f(int x, boolean b) {
+
+    if (b) {
+        return x + 1;
+    } else {
+        return x - 1;
+    }
+
+}
+
+
+int main() {
+    return 0;
+}

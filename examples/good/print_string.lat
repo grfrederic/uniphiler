@@ -1,4 +1,0 @@
-int main() {
-    printString("adsfasdf");
-    return 0;
-}

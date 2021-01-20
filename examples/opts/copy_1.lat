@@ -1,0 +1,28 @@
+void f(int x, int y, boolean b) {
+    int z;
+
+    if (b) {
+        z = x;
+        printInt(z);
+    } else {
+        z = y;
+        printInt(z);
+    }
+}
+
+void g(int x, int y, boolean b) {
+    int z;
+
+    if (b) {
+        z = x;
+    } else {
+        z = x;
+    }
+
+    printInt(z);
+}
+
+
+int main() {
+    return 0;
+}

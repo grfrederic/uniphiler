@@ -1,9 +1,0 @@
-int main() {
-    int x;
-    if (true)
-        x = 3;
-    else
-        x = 5;
-
-    return x;
-}
